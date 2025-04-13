@@ -19,22 +19,32 @@ float userSetTemperature = 50; // 설정 온도 저장 변수
 
 /*-----시스템 관리 / 제어용-----*/
 //GPIO아님
+/*---시스템 모드---*/
 #define STANBY_MODE 0 // 대기 모드
 #define ACTIVE_MODE 1 // 활성화 모드
 #define TEMPERATURE_MAINTANENCE_MODE 2 // 유지 모드기
 #define BOOTING_MODE 10 // 부팅 모드
-#define HEATER_MODE 3 // 가열 모드
-#define COOLER_MODE 4 // 냉각 모드
-#define BATTERY_HiGH 5 // 배터리 상태 (상)
-#define BATTERY_LOW 6 // 배터리 상태 (하)
-char control_mode = BOOTING_MODE; // 초기 모드 설정
+unsigned int control_mode = BOOTING_MODE; // 초기 모드 설정
+
+/*---전류 방향 제어---*/
+#define HEATER_MODE 0 // 가열 모드
+#define COOLER_MODE 1 // 냉각 모드
 volatile bool temperatureSettingMode = false; // 온도 설정 모드 초기화
+
+/*---배터리 관리 설정 부---*/
+#define BATTERY_HiGH 0 // 배터리 상태 (상)
+#define BATTERY_LOW 1 // 배터리 상태 (하)
+#define BATTERY_HIGH_VOLTAGE 4.2 // 배터리 전압 (상)
+#define BATTERY_LOW_VOLTAGE 3.0 // 배터리 전압 (하)
+bool batteryStatus = BATTERY_HiGH; // 배터리 상태 초기화
+volatile long BatteryVoltage = 0; // 배터리 전압 저장 변수
+long BatteryVoltagePWM = 0; // 배터리 량
 
 /*-----GPIO 설정 부-----*/
 /*---ESP32-C3 SuperMini GPIO 핀 구성---*/
 // GPIO 5 : A5 : MISO /   5V   :    : VCC
 // GPIO 6 :    : MOSI /  GND   :    : GND
-// GPIO 7 :    : SS   /  3.3V  :    :3.3V
+// GPIO 7 :    : SS   /  3.3V  :    : VCC
 // GPIO 8 :    : SDA  / GPIO 4 : A4 : SCK
 // GPIO 9 :    : SCL  / GPIO 3 : A3 : 
 // GPIO 10:    :      / GPIO 2 : A2 : 
@@ -165,8 +175,11 @@ low-battery Display :
 */
 void batteryDisplayPrint() //배터리 관련 Display 관리 함수
 {
-  
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("충전이 필요합니다!"))/2, 55, "충전이 필요합니다!"); // 충전이 필요합니다! 출력
+  u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth("100%")), 0); // 배터리 상태 표시
+  u8g2.print(BatteryVoltagePWM); // 배터리 상태 표시
+  u8g2.print("%"); // 배터리 상태 표시
+  if(batteryStatus == BATTERY_LOW) // 배터리 상태가 LOW일 경우
+    u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("충전이 필요합니다!"))/2, 55, "충전이 필요합니다!"); // 충전이 필요합니다! 출력
 }
 
 void settingTemperatureDisplayPrint() //온도 설정 Display 관리 함수
@@ -202,6 +215,7 @@ Ended Setting Display :
   u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("화상에 주의해 주세요!"))/2, 55, "화상에 주의해 주세요!"); // 화상에 주의해 주세요! 출력
 }
 /*-----Smooth Display-----*/
+/*
 void contrastUpDisplay()// 대비 조정 함수 UP
 {
   for (int i = 0; i < 255; i++)
@@ -315,6 +329,7 @@ void changeControlMode(char control_device_mode) //열전소자 제어 함수
 void setup()
 {
   Serial.begin(115200);
+  Wire.begin(); // I2C 초기화
   /*------pinMode INPUT_PULLUP------*/
   pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
   pinMode(BUTTON_UP, INPUT_PULLUP);
@@ -336,7 +351,7 @@ void setup()
   if (!u8g2.begin())
   {
     Serial.println("Display initialization failed!");
-    for (;;); // 초기화 실패 시 무한 루프
+    delay(1000); // 1초 대기 후 재시도
   }
   
   u8g2.setFont(u8g2_font_ncenB08_tr); // 폰트 설정
@@ -350,14 +365,15 @@ void setup()
 
   /*------PWM설정부------*/
   pinMode(PWM_PIN, OUTPUT); // PWM 핀 설정
-  //ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  //ledcAttachPin(PWM_PIN, PWM_CHANNEL); // PWM 핀과 채널 연결
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
+  ledcAttachPin(PWM_PIN, PWM_CHANNEL); // PWM 핀과 채널 연결
   
   ledcWrite(PWM_CHANNEL, pwmValue); // 초기 PWM 값 설정
 }
 /*----------setup----------*/
 
 /*----------loop----------*/
+
 void loop()
 { 
   u8g2.clearBuffer();
@@ -373,6 +389,21 @@ void loop()
   temperatureC = 50;
   volatile static float setTemperature = userSetTemperature;
   volatile static char lastmode = STANBY_MODE; // 마지막 모드 저장 변수
+  static bool temperatureSettingModeFlag = temperatureSettingMode; // 온도 설정 모드 플래그
+
+  /*-----Battery 상태 관리 함수-----*/
+  //BatteryVoltage = analogRead(0); // 아날로그 핀 0에서 배터리 전압 읽기
+  //BatteryVoltage = 4.2 * BatteryVoltage / 4095; // 배터리 전압 변환 (0~4.2V)
+  BatteryVoltage = BATTERY_HIGH_VOLTAGE; // 테스트용 배터리 전압 설정
+  BatteryVoltagePWM = map(BatteryVoltage, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE, 0, 100); // 배터리 전압을 PWM 값으로 변환
+  if (BatteryVoltagePWM <= 20)
+  {
+    batteryStatus = BATTERY_LOW; // 배터리 상태 (하) 설정
+  }
+  else if (BatteryVoltagePWM > 20)
+  {
+    batteryStatus = BATTERY_HiGH; // 배터리 상태 (상) 설정
+  }
 
   /*-----온도 측정부-----*/
   if(sensors.isConversionComplete()){
@@ -402,32 +433,40 @@ void loop()
 
   /*------Main System Setting------*/
   /*-----Main Display for User-----*/
+  u8g2.clearBuffer(); // display 버퍼 초기화
+  baseDisplayPrint(); // display 기본 출력
+  batteryDisplayPrint(); // 배터리 상태 출력
   if (temperatureSettingMode == true) {
-    static bool temperatureSettingModeFlag = temperatureSettingMode; // 온도 설정 모드 상태 변수
-    if (temperatureSettingModeFlag != temperatureSettingMode) {
-
-    }
-    contrastDownDisplay(); // 대비 조정
-    u8g2.clearBuffer(); // display 버퍼 초기화
-    baseDisplayPrint(); // display 기본 출력
+    temperatureSettingModeFlag = true; // 온도 설정 모드 플래그 설정
     settingTemperatureDisplayPrint(); // 온도 설정 화면 출력
     u8g2.sendBuffer(); // display 버퍼 전송
-    contrastUpDisplay(); // 대비 조정
   }
-  else if (temperatureSettingMode == false) {
-    contrastDownDisplay();
-    u8g2.clearBuffer();
-    baseDisplayPrint(); // display 기본 출력
-    batteryDisplayPrint(); // display 기본 출력
-    u8g2.sendBuffer(); // display 버퍼 전송
-    contrastUpDisplay(); // 대비 조정
+  else if (temperatureSettingMode == false) 
+  {
+    if (temperatureSettingModeFlag == true) 
+    {
+      if (userSetTemperature != setTemperature) 
+      {
+        endedSettingTemperatureDisplayPrint(); // 온도 설정 화면 출력
+        u8g2.sendBuffer(); // display 버퍼 전송
+        setTemperature = userSetTemperature; // 설정 온도 저장
+        control_mode = ACTIVE_MODE; // 활성화 모드로 변경
+        temperatureSettingModeFlag = false; // 온도 설정 모드 플래그 초기화
+      }
+      else
+        temperatureSettingModeFlag = false; // 온도 설정 모드 플래그 초기화
+    }
+    else 
+    {
+      allTumblerDisplayPrint();
+      u8g2.sendBuffer(); // display 버퍼 전송
+    }
   }
-  
   
   /*-----PWM 설정부 / 동작-----*/
 
 
-  /*-----ACTIVE_MODE 동작-----*/
+  /*-----ACTIVE_MODE 동작-----*/ //switch문으로 변경 필요
   if (control_mode == ACTIVE_MODE) // 활성화 모드일 경우                                                                                                                                                                                                                                    ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
   {
     if (temperatureC < userSetTemperature) // 현재 온도가 설정온도보다 낮을 경우
@@ -475,28 +514,37 @@ void loop()
   if (displaySleepTime + 10000 < millis()) // 10초 이상 버튼이 눌리지 않으면 절전모드로 전환
   {
     displaySleep = true; // 절전모드 상태 변수 설정
-    contrastDownDisplay(); // 대비 조정
     u8g2.setPowerSave(1); // 절전모드 설정
-    contrastUpDisplay(); // 대비 조정
   }
   else if (displaySleepTime + 10000 > millis()) // 버튼이 눌리면 절전모드 해제
   {
     displaySleep = false; // 절전모드 해제
-    contrastDownDisplay(); // 대비 조정
     u8g2.setPowerSave(0); // 절전모드 해제
-    contrastUpDisplay(); // 대비 조정
   }
 
   /*-----Button Interrupt Reset-----*/
   if (bootButton == true) // 부팅 버튼이 눌리면
-  {
-    control_mode = BOOTING_MODE; // 부팅 모드로 변경
+  { 
     bootButton = false; // 부팅 버튼 상태 변수 초기화
+    Serial.println("bootButton"); // 디버깅용 출력
+    temperatureSettingMode = true; // 온도 설정 모드 상태 변수 반전
+    if(userSetTemperature != setTemperature) // 설정 온도가 변경되면
+    {
+      setTemperature = userSetTemperature; // 설정 온도 저장
+      control_mode = TEMPERATURE_MAINTANENCE_MODE; // 유지 모드로 변경
+      Serial.println("온도 설정 모드로 전환"); // 디버깅용 출력
+    }
+    else if(userSetTemperature == setTemperature) // 설정 온도가 변경되지 않으면
+    {
+      temperatureSettingMode = false; // 온도 설정 모드 상태 변수 초기화
+      // control_mode 유지
+    }
     displaySleepTime = millis(); // display 절전모드 시간 초기화
   }
   if (upButton == true) // 설정온도 상승 버튼이 눌리면
   {
     upButton = false; // 설정온도 상승 버튼 상태 변수 초기화
+    Serial.println("upButton"); // 디버깅용 출력
     displaySleepTime = millis(); // display 절전모드 시간 초기화
     if(temperatureSettingMode == true) {
       userSetTemperature += 1; // 설정 온도 상승
@@ -509,6 +557,7 @@ void loop()
   if (downButton == true) // 설정온도 하강 버튼이 눌리면
   {
     downButton = false; // 설정온도 하강 버튼 상태 변수 초기화
+    Serial.println("downButton"); // 디버깅용 출력
     displaySleepTime = millis(); // display 절전모드 시간 초기화
     if (temperatureSettingMode == true) {
       userSetTemperature -= 1; // 설정 온도 하강
@@ -518,6 +567,5 @@ void loop()
       }
     }
   }
-  delay(100); // 0.1초 대기
 }
 /*----------loop----------*/
