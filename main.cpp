@@ -28,7 +28,7 @@ float userSetTemperature = 50; // 설정 온도 저장 변수
 #define BATTERY_HiGH 5 // 배터리 상태 (상)
 #define BATTERY_LOW 6 // 배터리 상태 (하)
 char control_mode = BOOTING_MODE; // 초기 모드 설정
-bool temperatureSettingMode = false; // 온도 설정 모드 초기화
+volatile bool temperatureSettingMode = false; // 온도 설정 모드 초기화
 
 /*-----GPIO 설정 부-----*/
 /*---ESP32-C3 SuperMini GPIO 핀 구성---*/
@@ -63,16 +63,16 @@ float pwmValue = 0; // PWM 출력 값 저장 변수
 #define SYSTEM_MAX_TEMPERATURE 80 // 시스템 최대 온도 80'C
 
 /*-----Interrupt 버튼 triger 선언부-----*/
-unsigned char bootButton = false;
-unsigned char upButton = false; // 설정온도 상승 버튼 상태 변수
-unsigned char downButton = false; // 설정온도 하강 버튼 상태 변수
+volatile bool bootButton = false;
+volatile bool upButton = false; // 설정온도 상승 버튼 상태 변수
+volatile bool downButton = false; // 설정온도 하강 버튼 상태 변수
 
 /*-----바운싱으로 인한 입력 값 오류 제거용-----*/
 volatile unsigned long lastDebounceTime = 0;   // 마지막 디바운스 시간
-const unsigned long debounceDelay = 500;          // 디바운싱 지연 시간 (밀리초)
+const unsigned long debounceDelay = 200;          // 디바운싱 지연 시간 (밀리초)
 
 /*-----Display 절전모드 제어용 변수-----*/
-unsigned char displaySleep = false; // display 절전모드 상태 변수
+volatile bool displaySleep = false; // display 절전모드 상태 변수
 float displaySleepTime = 0; // display 절전모드 시간 변수
 /*----------전역변수 / 클래스 선언부----------*/
 
@@ -232,57 +232,28 @@ void baseDisplayPrint()// 기본 Display 내용 출력 함수
 void IRAM_ATTR downButtonF() //Down Button Interrupt Service Routine
 { 
   unsigned long currentTime = millis();
-  if (currentTime - lastDebounceTime > debounceDelay && temperatureSettingMode == false)
+  if (currentTime - lastDebounceTime > debounceDelay)
   {
     lastDebounceTime = currentTime;
     downButton = true; // 설정온도 하강 버튼 상태 변수
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
-  }
-  else if (currentTime - lastDebounceTime > debounceDelay && temperatureSettingMode == true )
-  {
-    lastDebounceTime = currentTime;
-    userSetTemperature -= 1; // 설정 온도 하강
-    if (userSetTemperature < MIN_TEMPERATURE) // 설정 온도가 최소 온도를 초과할 경우
-    {
-      userSetTemperature = MIN_TEMPERATURE; // 설정 온도를 최소 온도로 설정
-    }
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
   }
 }
 void IRAM_ATTR upButtonF() //Up Button Interrupt Service Routine
 {
   unsigned long currentTime = millis();
-  if (currentTime - lastDebounceTime> debounceDelay && temperatureSettingMode == false)
+  if (currentTime - lastDebounceTime> debounceDelay)
   {
     lastDebounceTime = currentTime;
     upButton = true; // 설정온도 상승 버튼 상태 변수
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
-  }
-  else if (currentTime - lastDebounceTime > debounceDelay && temperatureSettingMode == true )
-  {
-    lastDebounceTime = currentTime;
-    userSetTemperature += 1; // 설정 온도 상승
-    if (userSetTemperature > MAX_TEMPERATURE) // 설정 온도가 최대 온도를 초과할 경우
-    {
-      userSetTemperature = MAX_TEMPERATURE; // 설정 온도를 최대 온도로 설정
-    }
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
   }
 }
 void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
 {
   unsigned long currentTime = millis();
-  if (currentTime - lastDebounceTime > debounceDelay && control_mode == BOOTING_MODE)
+  if (currentTime - lastDebounceTime > debounceDelay)
   {
     lastDebounceTime = currentTime;
     bootButton = true;
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
-  }
-  else if (currentTime - lastDebounceTime > debounceDelay && control_mode != BOOTING_MODE)
-  {
-    lastDebounceTime = currentTime;
-    temperatureSettingMode = !temperatureSettingMode; // 온도 설정 모드 상태 변수
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
   }
 }
 
@@ -515,5 +486,38 @@ void loop()
     u8g2.setPowerSave(0); // 절전모드 해제
     contrastUpDisplay(); // 대비 조정
   }
+
+  /*-----Button Interrupt Reset-----*/
+  if (bootButton == true) // 부팅 버튼이 눌리면
+  {
+    control_mode = BOOTING_MODE; // 부팅 모드로 변경
+    bootButton = false; // 부팅 버튼 상태 변수 초기화
+    displaySleepTime = millis(); // display 절전모드 시간 초기화
+  }
+  if (upButton == true) // 설정온도 상승 버튼이 눌리면
+  {
+    upButton = false; // 설정온도 상승 버튼 상태 변수 초기화
+    displaySleepTime = millis(); // display 절전모드 시간 초기화
+    if(temperatureSettingMode == true) {
+      userSetTemperature += 1; // 설정 온도 상승
+      if (userSetTemperature > MAX_TEMPERATURE) // 설정 온도가 최대 온도를 초과할 경우
+      {
+        userSetTemperature = MAX_TEMPERATURE; // 설정 온도를 최대 온도로 설정
+      }
+    }
+  }
+  if (downButton == true) // 설정온도 하강 버튼이 눌리면
+  {
+    downButton = false; // 설정온도 하강 버튼 상태 변수 초기화
+    displaySleepTime = millis(); // display 절전모드 시간 초기화
+    if (temperatureSettingMode == true) {
+      userSetTemperature -= 1; // 설정 온도 하강
+      if (userSetTemperature < MIN_TEMPERATURE) // 설정 온도가 최소 온도를 초과할 경우
+      {
+        userSetTemperature = MIN_TEMPERATURE; // 설정 온도를 최소 온도로 설정
+      }
+    }
+  }
+  delay(100); // 0.1초 대기
 }
 /*----------loop----------*/
