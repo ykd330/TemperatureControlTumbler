@@ -125,12 +125,12 @@ temperature maintanence Display :
 |온도 유지중...       |
 */
   u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("현재 온도 :   ℃"))/2, 25, "현재 온도 :   ℃");
-  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("현재 온도 :   ℃"))/2) + u8g2.getStrWidth("현재온도 : "), 25);
+  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("현재 온도 :   ℃"))/2) + u8g2.getStrWidth("현재 온도 : "), 25);
   u8g2.print(temperatureC); // 현재 온도 출력
 
   if (control_mode == STANBY_MODE) {
     u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("설정 온도 :   ℃"))/2, 40, "설정 온도 :   ℃");
-    u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("설정 온도 :   ℃"))/2) + u8g2.getStrWidth("설정온도 : "), 40);
+    u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("설정 온도 :   ℃"))/2) + u8g2.getStrWidth("설정 온도 : "), 40);
     u8g2.print(userSetTemperature); // 설정 온도 출력
     u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("대기중..."))/2, 55, "대기중..."); // 대기중... 출력
   }
@@ -430,6 +430,52 @@ void loop()
     }
   }
 
+  /*-----Button Interrupt Reset-----*/
+  if (bootButton == true) // 부팅 버튼이 눌리면
+  { 
+    bootButton = false; // 부팅 버튼 상태 변수 초기화
+    Serial.println("bootButton"); // 디버깅용 출력
+    temperatureSettingMode = true; // 온도 설정 모드 상태 변수 반전
+    if(userSetTemperature != setTemperature) // 설정 온도가 변경되면
+    {
+      setTemperature = userSetTemperature; // 설정 온도 저장
+      control_mode = TEMPERATURE_MAINTANENCE_MODE; // 유지 모드로 변경
+      Serial.println("온도 설정 모드로 전환"); // 디버깅용 출력
+    }
+    else if(userSetTemperature == setTemperature) // 설정 온도가 변경되지 않으면
+    {
+      temperatureSettingMode = false; // 온도 설정 모드 상태 변수 초기화
+      // control_mode 유지
+    }
+    displaySleepTime = millis(); // display 절전모드 시간 초기화
+  }
+  if (upButton == true) // 설정온도 상승 버튼이 눌리면
+  {
+    upButton = false; // 설정온도 상승 버튼 상태 변수 초기화
+    Serial.println("upButton"); // 디버깅용 출력
+    displaySleepTime = millis(); // display 절전모드 시간 초기화
+    if(temperatureSettingMode == true) {
+      userSetTemperature += 1; // 설정 온도 상승
+      if (userSetTemperature > MAX_TEMPERATURE) // 설정 온도가 최대 온도를 초과할 경우
+      {
+        userSetTemperature = MAX_TEMPERATURE; // 설정 온도를 최대 온도로 설정
+      }
+    }
+  }
+  if (downButton == true) // 설정온도 하강 버튼이 눌리면
+  {
+    downButton = false; // 설정온도 하강 버튼 상태 변수 초기화
+    Serial.println("downButton"); // 디버깅용 출력
+    displaySleepTime = millis(); // display 절전모드 시간 초기화
+    if (temperatureSettingMode == true) {
+      userSetTemperature -= 1; // 설정 온도 하강
+      if (userSetTemperature < MIN_TEMPERATURE) // 설정 온도가 최소 온도를 초과할 경우
+      {
+        userSetTemperature = MIN_TEMPERATURE; // 설정 온도를 최소 온도로 설정
+      }
+    }
+  }
+
 
   /*------Main System Setting------*/
   /*-----Main Display for User-----*/
@@ -510,7 +556,7 @@ void loop()
     }
   }
 
-  /*-----Display Low-Energe Mode-----*/
+    /*-----Display Low-Energe Mode-----*/
   if (displaySleepTime + 10000 < millis()) // 10초 이상 버튼이 눌리지 않으면 절전모드로 전환
   {
     displaySleep = true; // 절전모드 상태 변수 설정
@@ -522,50 +568,5 @@ void loop()
     u8g2.setPowerSave(0); // 절전모드 해제
   }
 
-  /*-----Button Interrupt Reset-----*/
-  if (bootButton == true) // 부팅 버튼이 눌리면
-  { 
-    bootButton = false; // 부팅 버튼 상태 변수 초기화
-    Serial.println("bootButton"); // 디버깅용 출력
-    temperatureSettingMode = true; // 온도 설정 모드 상태 변수 반전
-    if(userSetTemperature != setTemperature) // 설정 온도가 변경되면
-    {
-      setTemperature = userSetTemperature; // 설정 온도 저장
-      control_mode = TEMPERATURE_MAINTANENCE_MODE; // 유지 모드로 변경
-      Serial.println("온도 설정 모드로 전환"); // 디버깅용 출력
-    }
-    else if(userSetTemperature == setTemperature) // 설정 온도가 변경되지 않으면
-    {
-      temperatureSettingMode = false; // 온도 설정 모드 상태 변수 초기화
-      // control_mode 유지
-    }
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
-  }
-  if (upButton == true) // 설정온도 상승 버튼이 눌리면
-  {
-    upButton = false; // 설정온도 상승 버튼 상태 변수 초기화
-    Serial.println("upButton"); // 디버깅용 출력
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
-    if(temperatureSettingMode == true) {
-      userSetTemperature += 1; // 설정 온도 상승
-      if (userSetTemperature > MAX_TEMPERATURE) // 설정 온도가 최대 온도를 초과할 경우
-      {
-        userSetTemperature = MAX_TEMPERATURE; // 설정 온도를 최대 온도로 설정
-      }
-    }
-  }
-  if (downButton == true) // 설정온도 하강 버튼이 눌리면
-  {
-    downButton = false; // 설정온도 하강 버튼 상태 변수 초기화
-    Serial.println("downButton"); // 디버깅용 출력
-    displaySleepTime = millis(); // display 절전모드 시간 초기화
-    if (temperatureSettingMode == true) {
-      userSetTemperature -= 1; // 설정 온도 하강
-      if (userSetTemperature < MIN_TEMPERATURE) // 설정 온도가 최소 온도를 초과할 경우
-      {
-        userSetTemperature = MIN_TEMPERATURE; // 설정 온도를 최소 온도로 설정
-      }
-    }
-  }
 }
 /*----------loop----------*/
