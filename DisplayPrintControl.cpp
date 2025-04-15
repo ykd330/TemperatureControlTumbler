@@ -1,8 +1,5 @@
 #pragma 
 #include "DisplayPrintControl.h"
-#include <Arduino.h>
-#include <Wire.h>
-#include <U8g2lib.h>
 
 void DisplayPrintControl::startingDisplayPrint() {
   u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("제작 : 5조"))/2, 23, "제작 : 5조"); // Starting... 출력

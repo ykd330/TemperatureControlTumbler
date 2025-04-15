@@ -1,15 +1,11 @@
-#pragma
-#include <Arduino.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
+
 #include "TumblerSystemControl.h"
 
-TumblerSystemControl::TumblerSystemControl(uint8_t Heaterfin, uint8_t Coolerfin)
+TumblerSystemControl::TumblerSystemControl(uint8_t Heaterfin, uint8_t Coolerfin, DallasTemperature *sensors)
 {   
     /*------DS18B20설정부------*/
-    sensors.begin(); // DS18B20 센서 초기화
-    sensors.setWaitForConversion(false); // 비동기식으로 온도 측정
-    sensors.requestTemperatures(); // 온도 측정 요청
+    sensors->setWaitForConversion(false); // 비동기식으로 온도 측정
+    sensors->requestTemperatures(); // 온도 측정 요청
     /*-----출력부 핀 설정-----*/
     pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
     pinMode(Heaterfin, OUTPUT);
@@ -73,14 +69,9 @@ unsigned int TumblerSystemControl::BatteryVoltageValue() {
 }
 
 int TumblerSystemControl::measureTemperatureRequest() {
-    if (sensors.isConversionComplete())
-    {
-        int value = sensors.getTempCByIndex(0);
-        sensors.requestTemperatures();
-        return value;
-    }
-    else
-        return;
+    int value = sensors->getTempCByIndex(0);
+    sensors->requestTemperatures();
+    return value;
 }
 
 void TumblerSystemControl::systemModeActive(int userSetTemperature) {

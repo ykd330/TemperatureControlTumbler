@@ -1,8 +1,9 @@
 /*-----------include-----------*/
-#pragma
 #include <Arduino.h>
 #include "DisplayPrintControl.h"
 #include "TumblerSystemControl.h"
+#include <OneWire.h>
+#include <DallasTemperature.h>
 /*-----------include-----------*/
 
 /*----------GPIO Define----------*/
@@ -16,15 +17,19 @@
 /*----------GPIO Define----------*/
 
 /*----------전역변수 / 클래스 선언부----------*/
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+TumblerSystemControl sysControl(HEAT_PIN, COOL_PIN, &sensors);
 DisplayPrintControl Display;
-TumblerSystemControl sysControl(HEAT_PIN, COOL_PIN);
 int userSetTemperature = 0; // 설정 온도 저장 변수
 
 /*-----시스템 관리 / 제어용-----*/
 #define STANBY_MODE 0 // 대기 모드
 #define ACTIVE_MODE 1 // 활성화 모드
-#define TEMPERATURE_MAINTANENCE_MODE 2 // 유지 모드기
-#define BOOTING_MODE 3 // 부팅 모드
+#define TEMPERATURE_MAINTANENCE_MODE 2 // 유지 모드
+#define TEMPERATURE_USER_SETTING_MODE 3 // 사용자 온도 변경 모드
+
+#define BOOTING_MODE 4 // 부팅 모드
 volatile unsigned char Mode = BOOTING_MODE;
 
 /*---시스템 모드---*/
@@ -79,6 +84,7 @@ void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
 void setup()
 {
   Serial.begin(115200);
+  sensors.begin();
   /*------pinMode INPUT_PULLUP------*/
   pinMode(BUTTON_UP, INPUT_PULLUP);
   pinMode(BUTTON_DOWN, INPUT_PULLUP);
@@ -89,6 +95,7 @@ void setup()
   attachInterrupt(BUTTON_UP, upButtonF, FALLING);
   attachInterrupt(BUTTON_DOWN, downButtonF, FALLING);
   attachInterrupt(BUTTON_BOOT, bootButtonF, FALLING); //
+
 }
 /*----------setup----------*/
 
@@ -184,5 +191,6 @@ void loop()
   {
     Display.displaySleep(false);
   }
+
 }
 /*----------loop----------*/

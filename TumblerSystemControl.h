@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef TEMBLERSYSYEMCONTROL_H
 #define TEMBLERSYSTEMCONTROL_H
 #include <Arduino.h>
@@ -31,8 +33,6 @@
 
 /*----------GPIO Define----------*/
 #define ONE_WIRE_BUS 4 // DS18B20 센서의 데이터 핀을 GPIO 4번에 연결
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature sensors(&oneWire);
 
 /*-----GPIO 설정 부-----*/
 /*---ESP32-C3 SuperMini GPIO 핀 구성---*/
@@ -61,7 +61,7 @@ DallasTemperature sensors(&oneWire);
 
 class TumblerSystemControl
 {
-protected:
+protected:  
     unsigned char deviceMode = BOOTING_MODE;
     unsigned char controlMode = BOOTING_MODE; // 초기 모드 설정
     bool BatteryStatus = 0; // 배터리 상태 초기화
@@ -74,10 +74,12 @@ private:
     unsigned char Coolerfin = 0;
     int temperatureC = 0;
     int pwmValue = 0;
+    DallasTemperature *sensors;
+      
 
 public:
     TumblerSystemControl() {  };
-    TumblerSystemControl(uint8_t Heaterfin, uint8_t Coolerfin);
+    TumblerSystemControl(uint8_t Heaterfin, uint8_t Coolerfin, DallasTemperature *sensors);
     
     void changeControlMode(unsigned char controlMode);
     void changeBatteryStatus(bool status);

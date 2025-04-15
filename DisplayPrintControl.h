@@ -1,4 +1,4 @@
-
+#pragma once
 
 #ifndef DISPLAYPRINTCONTROL_H
 #define DISPLAYPRINTCONTROL_H
@@ -7,8 +7,8 @@
 #include <Wire.h>
 #include "TumblerSystemControl.h"
  // I2C 핀 설정
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
-class DisplayPrintControl : public TumblerSystemControl
+extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+class DisplayPrintControl : private TumblerSystemControl
 {  
 private : 
     unsigned int userSetTemperature = 0;
