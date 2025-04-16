@@ -511,8 +511,5 @@ void loop()
     deviceMode = DISPLAY_SLEEP;
     u8g2.setPowerSave(1); // 절전모드 설정
   }
-
-
-
 }
 /*----------loop----------*/
