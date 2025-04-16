@@ -4,6 +4,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
+//Fine use koranLibrary
 /*-----------include-----------*/
 
 /*----------전역변수 / 클래스 선언부----------*/
@@ -352,9 +353,10 @@ void setup()
   /*------display설정부------*/
   u8g2.begin(); // display 초기화
   u8g2.enableUTF8Print(); // UTF-8 문자 인코딩 사용
-  u8g2.setFont(u8g2_font_ncenB08_tr); // 폰트 설정
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   u8g2.setFontMode(1); // 폰트 모드 설정
   u8g2.setDrawColor(1); // 글자 색상 설정
+  u8g2.setFontDirection(0);
 
   /*------Interrupt설정부------*/
   attachInterrupt(BUTTON_UP, upButtonF, FALLING);
