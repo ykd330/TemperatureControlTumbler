@@ -5,6 +5,7 @@
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
 /*-----------include-----------*/
+//
 
 /*----------전역변수 / 클래스 선언부----------*/
 /*-----Display Setting-----*/
@@ -14,7 +15,7 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); // I2C 핀 설
 #define ONE_WIRE_BUS 4 // DS18B20 센서의 데이터 핀을 GPIO 4번에 연결
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
-static float temperatureC = 0; // 현재 온도 저장 변수
+float temperatureC = 0; // 현재 온도 저장 변수
 float userSetTemperature = 50; // 설정 온도 저장 변수
 
 /*-----시스템 관리 / 제어용-----*/
@@ -271,7 +272,7 @@ void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
   if (currentTime - lastDebounceTime > debounceDelay)
   {
     lastDebounceTime = currentTime;
-    bootButton != bootButton;
+    bootButton = !bootButton;
   }
 }
 
@@ -352,9 +353,10 @@ void setup()
   /*------display설정부------*/
   u8g2.begin(); // display 초기화
   u8g2.enableUTF8Print(); // UTF-8 문자 인코딩 사용
-  u8g2.setFont(u8g2_font_ncenB08_tr); // 폰트 설정
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   u8g2.setFontMode(1); // 폰트 모드 설정
   u8g2.setDrawColor(1); // 글자 색상 설정
+  u8g2.setFontDirection(0);
 
   /*------Interrupt설정부------*/
   attachInterrupt(BUTTON_UP, upButtonF, FALLING);
@@ -370,15 +372,17 @@ void setup()
 }
 /*----------setup----------*/
 
+//button이 하드웨어적으로 debouncing이 구현되어 있을 수 있음 -> debouncing 제거 후 test
+//한글이 포함된 폰트 찾아야 함
+//motor drive사용 x -> mosfet 2개를 사용하는 방식으로 바꿔야함 -> pwm 핀 2개로 제어 -> high / low 상태를 시스템적으로만 정의하고 실제 출력은 pwm만 사용하도록 변경함
+
 /*----------loop----------*/
 
 void loop()
 { 
-  u8g2.clearBuffer();
   /*----------동작 모드 설정부----------*/
   /*-----loop 지역 변수 선언부-----*/
-  unsigned int saveMode = 0;
-  temperatureC = 50;
+  static unsigned int saveMode = 0;
 
   /*-----온도 측정부-----*/
   if(sensors.isConversionComplete()){
@@ -409,6 +413,7 @@ void loop()
   }
 
   /*Main System control and Display print*/
+  u8g2.clearBuffer();
   baseDisplayPrint();
   batteryDisplayPrint();
   switch (deviceMode)
@@ -426,12 +431,12 @@ void loop()
     if (upButton == true) 
     {
       userSetTemperature++;
-      upButton == false;
+      upButton = false;
     }
     if (downButton == true) 
     {
       userSetTemperature--;
-      downButton == false;
+      downButton = false;
     }
     break;
 
@@ -462,12 +467,12 @@ void loop()
     if (upButton == true) 
     {
       userSetTemperature++;
-      upButton == false;
+      upButton = false;
     }
     if (downButton == true) 
     {
       userSetTemperature--;
-      downButton == false;
+      downButton = false;
     }
     break;
 
@@ -475,11 +480,14 @@ void loop()
     u8g2.clearBuffer();
     u8g2.drawStr(20, 20, "SENSOR ERROR");
     changeControlMode(STOP_MODE);
+    if(temperatureC != DEVICE_DISCONNECTED_C);
+      deviceMode = STANBY_MODE;
     break;
 
   case DISPLAY_ERROR:
     Serial.println("Display initialization failed!");
     changeControlMode(STOP_MODE);
+    deviceMode = STANBY_MODE;
     delay(1000); // 1초 대기 후 재시도
     break;
 
@@ -505,11 +513,16 @@ void loop()
 
   u8g2.sendBuffer();
     /*-----Display Low-Energe Mode-----*/
+    /*
   if (displaySleepTime + 10000 < millis()) // 10초 이상 버튼이 눌리지 않으면 절전모드로 전환
   { 
     saveMode = deviceMode;
     deviceMode = DISPLAY_SLEEP;
     u8g2.setPowerSave(1); // 절전모드 설정
   }
+    */
+
+
+
 }
 /*----------loop----------*/
