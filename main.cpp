@@ -4,6 +4,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
+#include "U8g2lib.h"
 /*-----------include-----------*/
 //
 
@@ -62,11 +63,12 @@ long BatteryPercentage = 0; // 배터리 량
 /*-----열전소자 전류 제어용 PWM / 출력 PIN 설정부-----*/
 #define PWM_FREQ 5000 // PWM 주파수 설정 (5kHz)
 #define PWM_RESOLUTION 8 // PWM 해상도 설정 (8비트)
-#define PWM_CHANNEL 0 // PWM 채널 설정 (0번 채널 사용)
+#define COOLER_CHANNEL 0 // PWM 채널 설정 (0번 채널 사용)
+#define HEATER_CHANNEL 1  // PWM 채널 설정 (1번 채널 사용)
 
-#define PWM_PIN 1 // PWM 핀 설정 (GPIO 1번 사용)
-#define COOLER_PIN 2 // 냉각 제어
-#define HEATER_PIN 3 // 가열 제어
+//#define PWM_PIN 1 // PWM 핀 설정 (GPIO 1번 사용)
+#define COOLER_PIN 1 // 냉각 제어
+#define HEATER_PIN 2 // 가열 제어
 
 /*-----Push Button 설정부-----*/
 #define BUTTON_UP 5   // GPIO 5번에 연결, 설정온도 상승
@@ -282,20 +284,20 @@ void changeControlMode(char control_device_mode) //열전소자 제어 함수
   if (control_device_mode == HEATER_MODE)
   {
     Serial.println("Heater Mode");
-    digitalWrite(HEATER_PIN, HIGH); // 가열 모드 핀 HIGH
-    digitalWrite(COOLER_PIN, LOW);  // 냉각 모드 핀 LOW
+    ledcWrite(COOLER_CHANNEL, 0); // 초기 PWM 값 설정
+    ledcWrite(HEATER_CHANNEL, pwmValue);
   }
   else if (control_device_mode == COOLER_MODE)
   {
     Serial.println("Cooler Mode");
-    digitalWrite(HEATER_PIN, LOW);  // 가열 모드 핀 LOW
-    digitalWrite(COOLER_PIN, HIGH); // 냉각 모드 핀 HIGH
+    ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
+    ledcWrite(HEATER_CHANNEL, 0);
   }
   else if (control_device_mode == STOP_MODE)
   {
     Serial.println("Stanby mode");
-    digitalWrite(HEATER_PIN, LOW);  // 가열 모드 핀 LOW
-    digitalWrite(COOLER_PIN, LOW);  // 냉각 모드 핀 LOW
+    ledcWrite(COOLER_CHANNEL, 0); // 초기 PWM 값 설정
+    ledcWrite(HEATER_CHANNEL, 0);
   }
 }
 /*----------함수 선언부----------*/
@@ -364,17 +366,24 @@ void setup()
   attachInterrupt(BUTTON_BOOT, bootButtonF, FALLING); //
 
   /*------PWM설정부------*/
-  pinMode(PWM_PIN, OUTPUT); // PWM 핀 설정
-  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  ledcAttachPin(PWM_PIN, PWM_CHANNEL); // PWM 핀과 채널 연결
+  pinMode(COOLER_PIN, OUTPUT); // PWM 핀 설정
+  pinMode(HEATER_PIN, OUTPUT);
+
+  ledcSetup(COOLER_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
+  ledcSetup(HEATER_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+
+  ledcAttachPin(COOLER_PIN, COOLER_CHANNEL); // PWM 핀과 채널 연결
+  ledcAttachPin(HEATER_PIN, HEATER_CHANNEL);
   
-  ledcWrite(PWM_CHANNEL, pwmValue); // 초기 PWM 값 설정
+  ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
+  ledcWrite(HEATER_CHANNEL, pwmValue);
 }
 /*----------setup----------*/
 
 //button이 하드웨어적으로 debouncing이 구현되어 있을 수 있음 -> debouncing 제거 후 test
 //한글이 포함된 폰트 찾아야 함
 //motor drive사용 x -> mosfet 2개를 사용하는 방식으로 바꿔야함 -> pwm 핀 2개로 제어 -> high / low 상태를 시스템적으로만 정의하고 실제 출력은 pwm만 사용하도록 변경함
+//온도 조절을 위해 알맞은 pwm값을 구해야함
 
 /*----------loop----------*/
 
@@ -413,6 +422,7 @@ void loop()
   }
 
   /*Main System control and Display print*/
+  pwmValue = map(userSetTemperature - temperatureC, MIN_TEMPERATURE, MAX_TEMPERATURE, 0, 255);
   u8g2.clearBuffer();
   baseDisplayPrint();
   batteryDisplayPrint();
