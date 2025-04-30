@@ -1,6 +1,5 @@
 /*-----------include-----------*/
 #include <Arduino.h>
-#include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
@@ -278,6 +277,7 @@ void IRAM_ATTR downButtonF() //Down Button Interrupt Service Routine
   {
     lastDebounceTime = currentTime;
     downButton = true; // 설정온도 하강 버튼 상태 변수
+    Serial.println("Pushed Button! : down");
   }
 }
 void IRAM_ATTR upButtonF() //Up Button Interrupt Service Routine
@@ -287,6 +287,7 @@ void IRAM_ATTR upButtonF() //Up Button Interrupt Service Routine
   {
     lastDebounceTime = currentTime;
     upButton = true; // 설정온도 상승 버튼 상태 변수
+    Serial.println("Pushed Button! : up");
   }
 }
 void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
@@ -295,7 +296,8 @@ void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
   if (currentTime - lastDebounceTime > debounceDelay)
   {
     lastDebounceTime = currentTime;
-    bootButton != bootButton;
+    bootButton = !bootButton;
+    Serial.println("Pushed Button! : boot");
   }
 }
 
@@ -357,9 +359,8 @@ void changeControlMode(char control_device_mode) //열전소자 제어 함수
 void setup()
 {
   Serial.begin(115200);
-  Wire.begin(); // I2C 초기화
   /*------pinMode INPUT_PULLUP------*/
-  pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
+ 
   pinMode(BUTTON_UP, INPUT_PULLUP);
   pinMode(BUTTON_DOWN, INPUT_PULLUP);
   pinMode(BUTTON_BOOT, INPUT_PULLUP);
@@ -376,10 +377,10 @@ void setup()
   /*------display설정부------*/
   u8g2.begin(); // display 초기화
   u8g2.enableUTF8Print(); // UTF-8 문자 인코딩 사용
-  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
+  u8g2.setFont(u8g2_font_courB08_tr); // 폰트 설정
   u8g2.setFontMode(1); // 폰트 모드 설정
   u8g2.setDrawColor(1); // 글자 색상 설정
-  u8g2.setFontDirection(0);
+  //u8g2.setFontDirection(0);
 
   /*------Interrupt설정부------*/
   attachInterrupt(BUTTON_UP, upButtonF, FALLING);
@@ -390,14 +391,14 @@ void setup()
   pinMode(COOLER_PIN, OUTPUT); // PWM 핀 설정
   pinMode(HEATER_PIN, OUTPUT);
 
-  ledcSetup(COOLER_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  ledcSetup(HEATER_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  //ledcSetup(COOLER_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
+  //ledcSetup(HEATER_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 
-  ledcAttachPin(COOLER_PIN, COOLER_CHANNEL); // PWM 핀과 채널 연결
-  ledcAttachPin(HEATER_PIN, HEATER_CHANNEL);
+  //ledcAttachPin(COOLER_PIN, COOLER_CHANNEL); // PWM 핀과 채널 연결
+  //ledcAttachPin(HEATER_PIN, HEATER_CHANNEL);
   
-  ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
-  ledcWrite(HEATER_CHANNEL, pwmValue);
+  //ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
+  //ledcWrite(HEATER_CHANNEL, pwmValue);
 }
 /*----------setup----------*/
 
@@ -449,6 +450,7 @@ void loop()
   /*Boot Button*/
     if (bootButton == true) {
       deviceMode = TEMPERATURE_SETTING_MODE;
+      bootButton = false;
     }
     allTumblerDisplayPrint();
     break;
@@ -457,6 +459,7 @@ void loop()
     /*Boot Button*/
     if (bootButton == true) {
       deviceMode = TEMPERATURE_SETTING_MODE;
+      bootButton = false;
     }
     allTumblerDisplayPrint();
     if (temperatureC + 1.5 < userSetTemperature)
@@ -479,6 +482,7 @@ void loop()
     /*Boot Button*/
     if (bootButton == true) {
       deviceMode = TEMPERATURE_SETTING_MODE;
+      bootButton = false;
     }
 
     allTumblerDisplayPrint();
@@ -491,16 +495,18 @@ void loop()
     break;
 
   case TEMPERATURE_SETTING_MODE:
-    if (bootButton == false && (userSetTemperature - temperatureC) > 0.5) 
+    if (bootButton == true && (userSetTemperature - temperatureC) > 0.5) 
     {
       endedSettingTemperatureDisplayPrint();
       deviceMode = ACTIVE_MODE;
+      bootButton = false;
       break;
     }
-    else if (bootButton == false && (userSetTemperature - temperatureC) <= 0.5) 
+    else if (bootButton == true && (userSetTemperature - temperatureC) <= 0.5) 
     {
       endedSettingTemperatureDisplayPrint();
       deviceMode = TEMPERATURE_MAINTANENCE_MODE;
+      bootButton = false;
       break;
     }
 
@@ -521,8 +527,13 @@ void loop()
     u8g2.clearBuffer();
     u8g2.drawStr(20, 20, "SENSOR ERROR");
     changeControlMode(STOP_MODE);
-    if(temperatureC != DEVICE_DISCONNECTED_C);
+    if(bootButton == true | upButton == true | downButton == true){
       deviceMode = STANBY_MODE;
+      bootButton = false;
+      upButton = false;
+      downButton = false;
+    }
+
     break;
 
   case DISPLAY_ERROR:
@@ -533,10 +544,13 @@ void loop()
     break;
 
   case DISPLAY_SLEEP:
-    if (displaySleepTime + 600000 > millis()) // 버튼이 눌리면 절전모드 해제
+    if (bootButton == true | upButton == true | downButton == true) // 버튼이 눌리면 절전모드 해제
     {
       deviceMode = saveMode;
       u8g2.setPowerSave(0); // 절전모드 해제
+      bootButton = false;
+      upButton = false;
+      downButton = false;
     }
     break;
 
@@ -550,17 +564,16 @@ void loop()
 
     break;
   }
-
-
   u8g2.sendBuffer();
+
+
     /*-----Display Low-Energe Mode-----*/
-  if (displaySleepTime + 600000 < millis()) // 10분분 이상 버튼이 눌리지 않으면 절전모드로 전환
+  if (displaySleepTime + 600000 < millis()) // 10분 이상 버튼이 눌리지 않으면 절전모드로 전환
   { 
     saveMode = deviceMode;
     deviceMode = DISPLAY_SLEEP;
     u8g2.setPowerSave(1); // 절전모드 설정
   }
-
 
 
 
