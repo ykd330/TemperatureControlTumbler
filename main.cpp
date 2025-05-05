@@ -1,11 +1,11 @@
 /*-----------include-----------*/
 #include <Arduino.h>
+#include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
-#include "U8g2lib.h"
-/*-----------include-----------*/
-//
+//#include "u8g2_font_unifont_t_NanumGothic.h"
+//--------------------------------------------------
 
 /*----------전역변수 / 클래스 선언부----------*/
 /*-----Display Setting-----*/
@@ -34,7 +34,7 @@ unsigned int deviceMode = BOOTING_MODE; // 초기 모드 설정
 /*---전류 방향 제어---*/
 #define HEATER_MODE 0 // 가열 모드
 #define COOLER_MODE 1 // 냉각 모드
-#define STOP_MODE 2  // 작동 정지
+#define STOP_MODE 2  // 작동 정지지
 volatile unsigned char activeMode = false; // 온도 설정 모드 초기화
 
 /*---배터리 관리 설정 부---*/
@@ -42,7 +42,8 @@ volatile unsigned char activeMode = false; // 온도 설정 모드 초기화
 #define BATTERY_LOW 1 // 배터리 상태 (하)
 #define BATTERY_HIGH_VOLTAGE 4.2 // 배터리 전압 (상)
 #define BATTERY_LOW_VOLTAGE 3.0 // 배터리 전압 (하)
-#define BATTERY_STATUS_LOW 20
+#define BATTERY_STATUS_FULL 100 // 배터리 완충
+#define BATTERY_STATUS_LOW 20 // 배터리 부족
 bool batteryStatus = BATTERY_HIGH; // 배터리 상태 초기화
 volatile long BatteryVoltage = 0; // 배터리 전압 저장 변수
 long BatteryPercentage = 0; // 배터리 량
@@ -98,34 +99,19 @@ float displaySleepTime = 0; // display 절전모드 시간 변수
 
 /*----------함수 선언부----------*/
 /*------Display / Display Print 제어 함수 설정부------*/
+// Display 전반을 모두 수정할 예정 -> 한글 폰트의 크기가 너무 큼 -> 적절한 한글 폰트를 찾지 못함 -> 내용을 압축하여 간결하게 출력해야함
+//1. 필요없는 BaseDisplay() 함수 -> batteryDisplay() 함수와 병합
+//3. NanumGothic 폰트로 변경
+//4. 그림들을 모두 함수로 직접 그리는 방식으로 변경
+//5. Battery관련 내용을 출력할 방식을 고안해야함.
 /*-----Starting Display Print-----*/
 void startingDisplayPrint()
-{
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("제작 : 5조"))/2, 23, "제작 : 5조"); // Starting... 출력
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("임선진 안대현 유경도"))/2, 38, "임선진 안대현 유경도");
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("Smart Tumbler"))/2, 53, "Smart Tumbler"); // Smart Tumbler 출력
+{ 
+  u8g2.setFont(u8g2_font_ncenB08_tr); // 폰트 설정
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("제작 : 5조"))/2, 23, "제작 : 5조"); 
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Temperature"))/2, 38, "Temperature"); 
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Control Tumbler"))/2, 53, "Control Tumbler"); 
 }
-/* XBM */
-// width => 0 ~ 127, 128px, height => 15 ~ 64, 49px
-// Height setting : pixel map - px12(0~ ; 12), temp - px 15(15~ ; 30, 45), charging.. etc - px 10 (50~ ; 60) 
-// temp width setting : fitst - 19, second - 16, 1px, ":", 1px , temperature number,, Information 
-static unsigned char krbits_hyunjae[] = {
-  //19 x 12
-  0x0e,0x00,0xfd,0x00,0x7d,0xfd,0x3f,0x11,0xfd,0xc0,0x11,0xfd,
-  0x0c,0x11,0xfd,0x12,0x11,0xff,0xd2,0x29,0xfd,0x0c,0x29,0xfd,
-  0x00,0x29,0xfd,0x02,0x45,0xfd,0x02,0x44,0xfd,0xfc,0x01,0xfd
-}; //현재
- 
-
-static unsigned char krbits_ondo[] = {
-  //16 x 11
-  0x00,0x00,0x3c,0x7c,0x42,0x02,0x42,0x02,0x3c,0x02,0x10,0x7c,
-  0xff,0x00,0x00,0x10,0x02,0x10,0x7c,0xfe,0x00,0x00
-}; //온도
- 
-
- 
-
 /*-----Main Display Print-----*/
  /*
 ---basic Display---
@@ -150,96 +136,108 @@ temperature maintanence Display :
 | 절전 / 가열 / 냉각  |
 |온도 유지중...       |
 */
-void allTumblerDisplayPrint() //Tumbler Display관리 함수
+/*-----Base DisplayPrint-----*/
+void baseDisplayPrint()// 기본 Display 내용 출력 함수
 {
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("현재 온도 :   ℃"))/2, 25, "현재 온도 :   ℃");
-  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("현재 온도 :   ℃"))/2) + u8g2.getStrWidth("현재 온도 : "), 25);
-  u8g2.print(temperatureC); // 현재 온도 출력
-
-  switch (deviceMode)
-  {
-  case STANBY_MODE:
-    u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("설정 온도 :   ℃"))/2, 40, "설정 온도 :   ℃");
-    u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("설정 온도 :   ℃"))/2) + u8g2.getStrWidth("설정 온도 : "), 40);
-    u8g2.print(userSetTemperature); // 설정 온도 출력
-    u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("대기중..."))/2, 55, "대기중..."); // 대기중... 출력
-    break;
-  
-  case ACTIVE_MODE:
-    u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("목표 온도 :   ℃"))/2, 40, "목표 온도 :   ℃");
-    u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("목표 온도 :   ℃"))/2) + u8g2.getStrWidth("목표온도 : "), 40);
-    u8g2.print(userSetTemperature); // 설정 온도 출력
-    if (activeMode == HEATER_MODE) 
-      u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("가열 중"))/2, 55, "가열 중"); // 가열 중 출력
-    
-    if (activeMode == COOLER_MODE) 
-      u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("냉각 중"))/2, 55, "냉각 중"); // 냉각 중 출력
-    break;
-
-  case TEMPERATURE_MAINTANENCE_MODE:
-    u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("온도 유지 중"))/2, 55, "온도 유지 중"); // 가열 중 출력
-    break;
-
-  default:
-    break;
+  u8g2.drawLine(0, 13, 127, 13); // 가로선 그리기
+  if(batteryStatus == BATTERY_STATUS_FULL)
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("100%")), 12); // 배터리 상태 표시
+  else if(batteryStatus == BATTERY_STATUS_LOW) {
+    u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("100%"))) / 2, 12); // 배터리 상태 표시
+    u8g2.print("please charge battery"); // 배터리 상태 표시
   }
-}
-/*
----Charging / low Battery Display---
-Charging Display :
-|Smart Tumbler System|
-|--------------------|
-| 현재 온도 : XX.X℃  |
-| 설정 온도 : XX.X℃  |
-|    [상태 표시]      |
-
-low-battery Display :
-|Smart Tumbler System|
-|--------------------|
-|  현재 온도 : XX.X℃ |
-|  설정 온도 : XX.X℃ |
-|  충전이 필요합니다! |
-*/
-void batteryDisplayPrint() //배터리 관련 Display 관리 함수
-{
-  u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getStrWidth("100%")), 0); // 배터리 상태 표시
+  else 
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("99%")), 12); // 배터리 상태 표시
   u8g2.print(BatteryPercentage); // 배터리 상태 표시
   u8g2.print("%"); // 배터리 상태 표시
-  if(batteryStatus == BATTERY_LOW) // 배터리 상태가 LOW일 경우
-    u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("충전이 필요합니다!"))/2, 55, "충전이 필요합니다!"); // 충전이 필요합니다! 출력
+}
+
+/*-----allTumblerDisplayPrint-----*/
+void allTumblerDisplayPrint() //Tumbler Display관리 함수
+{
+  unsigned int AaCo = 0; // 대기 중 카운트 변수
+  switch (deviceMode)
+  {
+    // 대기 모드
+  case STANBY_MODE:
+    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("현재 온도")) / 2, 30, "현재 온도"); // 현재 온도 출력
+    u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
+    u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("10℃")) / 2, 50); // 현재 온도 출력
+    u8g2.print(int(temperatureC)); // 현재 온도 출력
+    u8g2.print("℃"); 
+    break;
+  
+    // 온도 조절 모드
+  case ACTIVE_MODE:
+    
+    u8g2.drawUTF8(0, 30, "온도 조절 중...");
+    u8g2.setCursor(0, 45);
+    u8g2.print(temperatureC); // 현재 온도 출력
+    if (AaCo == 0) {
+      u8g2.setCursor(u8g2.getUTF8Width("10℃  "), 45);
+      u8g2.print("-");
+    }
+    else if (AaCo == 1) {
+      u8g2.setCursor(u8g2.getUTF8Width("10℃  "), 45);
+      u8g2.print("--");
+    }
+    else if (AaCo == 2) {
+      u8g2.setCursor(u8g2.getUTF8Width("10℃  "), 45);
+      u8g2.print("---");
+    }
+    else if (AaCo == 3) {
+      u8g2.setCursor(u8g2.getUTF8Width("10℃  "), 45);
+      u8g2.print("----");
+    }
+    else if (AaCo == 4) {
+      u8g2.setCursor(u8g2.getUTF8Width("10℃  "), 45);
+      u8g2.print("---->");
+    }
+    else 
+    {
+      AaCo = 0; // 카운트 초기화
+    }
+    AaCo++;
+    u8g2.setCursor(u8g2.getUTF8Width("10℃   ---->   "), 30); // 현재 온도 출력
+    u8g2.print(userSetTemperature); // 설정 온도 출력
+    u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
+    if (activeMode == HEATER_MODE) 
+      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("가열 중"))/2, 60, "가열 중"); // 가열 중 출력
+      //2668 if 2615
+    
+    if (activeMode == COOLER_MODE) 
+      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("냉각 중"))/2, 60, "냉각 중"); // 냉각 중 출력
+      //2744 or 2746
+    u8g2.print("℃"); // 현재 온도 출력
+    break;
+
+    // 온도 유지 모드
+  case TEMPERATURE_MAINTANENCE_MODE:
+    u8g2.drawUTF8(0, 30, "설정온도: ");
+    u8g2.setCursor(u8g2.getUTF8Width("설정온도: "), 30); // 설정 온도 출력
+    u8g2.print(userSetTemperature); // 설정 온도 출력
+    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 유지 중"))/2, 45, "온도 유지 중"); // 가열 중 출력
+    break;
+  }
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
 }
 
 void settingTemperatureDisplayPrint() //온도 설정 Display 관리 함수
 {
-  /*
----Setting Temperature Display---
-|Smart Tumbler System|  
-|--------------------|
-|  목표 온도 : XX.X℃ |
-|온도증가:▲ 온도감소:▼|
-|온도 설징 : 전원 버튼|
-*/
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("목표 온도 :   ℃"))/2, 25, "목표 온도 :   ℃");
-  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("목표 온도 :   ℃"))/2) + u8g2.getStrWidth("목표온도 : "), 25);
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도 :   ℃"))/2, 25, "목표 온도 :   ℃");
+  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도 :   ℃"))/2) + u8g2.getUTF8Width("목표온도 : "), 25);
   u8g2.print(userSetTemperature); // 설정 온도 출력
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("온도증가:▲ 온도감소:▼"))/2, 40, "온도증가:▲ 온도감소:▼"); // 온도증가:▲ 온도감소:▼ 출력
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("온도 설징 : 전원 버튼"))/2, 55, "온도 설징 : 전원 버튼"); // 온도 설징 : 전원 버튼 출력
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도증가:▲ 온도감소:▼"))/2, 40, "온도증가:▲ 온도감소:▼"); // 온도증가:▲ 온도감소:▼ 출력
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 설징 : 전원 버튼"))/2, 55, "온도 설징 : 전원 버튼"); // 온도 설징 : 전원 버튼 출력
 }
 void endedSettingTemperatureDisplayPrint() //온도 설정 Display 관리 함수
 {
-  /*
-Ended Setting Display :
-|Smart Tumbler System|
-|--------------------|
-| 목표 온도 : XX.X℃ |
-|온도를 조절하는 동안 |
-|화상에 주의해 주세요!|
-*/
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("목표 온도 :   ℃"))/2, 25, "목표 온도 :   ℃");
-  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getStrWidth("목표 온도 :   ℃"))/2) + u8g2.getStrWidth("목표온도 : "), 25);
+
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도 :   ℃"))/2, 25, "목표 온도 :   ℃");
+  u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도 :   ℃"))/2) + u8g2.getUTF8Width("목표온도 : "), 25);
   u8g2.print(userSetTemperature); // 설정 온도 출력
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("온도를 조절하는 동안"))/2, 40, "온도를 조절하는 동안"); // 온도를 조절하는 동안 출력
-  u8g2.drawStr((u8g2.getDisplayWidth() - u8g2.getStrWidth("화상에 주의해 주세요!"))/2, 55, "화상에 주의해 주세요!"); // 화상에 주의해 주세요! 출력
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도를 조절하는 동안"))/2, 40, "온도를 조절하는 동안"); // 온도를 조절하는 동안 출력
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("화상에 주의해 주세요!"))/2, 55, "화상에 주의해 주세요!"); // 화상에 주의해 주세요! 출력
 }
 /*-----Smooth Display-----*/
 /*
@@ -262,13 +260,6 @@ void contrastDownDisplay()// 대비 조정 함수 DOWN
   }
 }
 
-/*-----Base DisplayPrint-----*/
-void baseDisplayPrint()// 기본 Display 내용 출력 함수
-{
-  u8g2.drawStr(0, 8, "Smart Tumbler"); // Smart Tumbler 출력
-  u8g2.setFont(u8g2_font_ncenB08_tr); // 폰트 설정
-  u8g2.drawLine(0, 13, 127, 13); // 가로선 그리기
-}
 /*------Interrupt 함수 정의 부분------*/
 void IRAM_ATTR downButtonF() //Down Button Interrupt Service Routine
 { 
@@ -277,7 +268,6 @@ void IRAM_ATTR downButtonF() //Down Button Interrupt Service Routine
   {
     lastDebounceTime = currentTime;
     downButton = true; // 설정온도 하강 버튼 상태 변수
-    Serial.println("Pushed Button! : down");
   }
 }
 void IRAM_ATTR upButtonF() //Up Button Interrupt Service Routine
@@ -287,7 +277,6 @@ void IRAM_ATTR upButtonF() //Up Button Interrupt Service Routine
   {
     lastDebounceTime = currentTime;
     upButton = true; // 설정온도 상승 버튼 상태 변수
-    Serial.println("Pushed Button! : up");
   }
 }
 void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
@@ -297,7 +286,6 @@ void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
   {
     lastDebounceTime = currentTime;
     bootButton = !bootButton;
-    Serial.println("Pushed Button! : boot");
   }
 }
 
@@ -307,25 +295,25 @@ void changeControlMode(char control_device_mode) //열전소자 제어 함수
   if (control_device_mode == HEATER_MODE)
   {
     Serial.println("Heater Mode");
-    ledcWrite(COOLER_CHANNEL, 0); // 초기 PWM 값 설정
-    ledcWrite(HEATER_CHANNEL, pwmValue);
+   // ledcWrite(COOLER_CHANNEL, 0); // 초기 PWM 값 설정
+    //ledcWrite(HEATER_CHANNEL, pwmValue);
   }
   else if (control_device_mode == COOLER_MODE)
   {
     Serial.println("Cooler Mode");
-    ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
-    ledcWrite(HEATER_CHANNEL, 0);
+    //ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
+    //ledcWrite(HEATER_CHANNEL, 0);
   }
   else if (control_device_mode == STOP_MODE)
   {
     Serial.println("Stanby mode");
-    ledcWrite(COOLER_CHANNEL, 0); // 초기 PWM 값 설정
-    ledcWrite(HEATER_CHANNEL, 0);
+    //ledcWrite(COOLER_CHANNEL, 0); // 초기 PWM 값 설정
+    //ledcWrite(HEATER_CHANNEL, 0);
   }
 }
 /*----------함수 선언부----------*/
 
-/*----------시스템 구상----------*/
+/*----------시스템----------*/
 /*---GPIO핀 할당내용---*/
 //GPIO 1 : PWM 핀 (OUTPUT) -> 1
 //GPIO 2 : 냉각 신호 핀 (OUTPUT) -> 2
@@ -336,22 +324,6 @@ void changeControlMode(char control_device_mode) //열전소자 제어 함수
 //GPIO 7 : Booting / Home 버튼 핀
 //GPIO 8 : DISPLAY 핀 I2C SCL
 //GPIO 9 : DISPLAY 핀 I2C SDA 
-
-/*---Display Setting---*/
-// OLED display 설정
-//디스플레이 구현 시 고려할 점
-  // 부드러운 전환을 위해 0.5초 간격으로 화면을 업데이트
-  // 화면 전환 시 이전 화면을 지우고 새로운 화면을 그리는 방식으로 구현
-  // 모드당 화면을 나눔 ; 온도 측정 시 화면에 표현
-  // 시작시 전용 화면 출력 후
-  // 1. 온도 체크 알림 화면
-  // 2. 정지 화면 - 메인 화면임 
-  // 3. 작동 중 화면 - 현재 온도 / 설정온도 표시 ; 1초 간격으로 업데이트 ; 가열 / 냉각 모드 표시
-  // 4. 온도 유지 화면 - 설정 온도를 표시 / "{설정 온도}'C 유지중..." ; 1초 간격으로 업데이트 
-  // 배터리 잔량 표시 - 가능시 추가
-  // 온도 변환 시 전용 화면으로 전환 ; 전환 트리거 : 전원 버튼, 트리거 발생 시 화면 전환 후 버튼으로 
-  // 온도 설정, 전원버튼 한번 더 누를 시 설정 온도에 따라 모드 변환;
-//OLED display 함수
 /*----------시스템 구상----------*/
 
 
@@ -359,8 +331,9 @@ void changeControlMode(char control_device_mode) //열전소자 제어 함수
 void setup()
 {
   Serial.begin(115200);
+  Wire.begin(); // I2C 초기화
   /*------pinMode INPUT_PULLUP------*/
- 
+  pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
   pinMode(BUTTON_UP, INPUT_PULLUP);
   pinMode(BUTTON_DOWN, INPUT_PULLUP);
   pinMode(BUTTON_BOOT, INPUT_PULLUP);
@@ -377,28 +350,29 @@ void setup()
   /*------display설정부------*/
   u8g2.begin(); // display 초기화
   u8g2.enableUTF8Print(); // UTF-8 문자 인코딩 사용
-  u8g2.setFont(u8g2_font_courB08_tr); // 폰트 설정
-  u8g2.setFontMode(1); // 폰트 모드 설정
+  u8g2.setPowerSave(0);
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   u8g2.setDrawColor(1); // 글자 색상 설정
-  //u8g2.setFontDirection(0);
-
+  u8g2.setFontDirection(0); // 글자 방향 설정
   /*------Interrupt설정부------*/
   attachInterrupt(BUTTON_UP, upButtonF, FALLING);
   attachInterrupt(BUTTON_DOWN, downButtonF, FALLING);
   attachInterrupt(BUTTON_BOOT, bootButtonF, FALLING); //
 
   /*------PWM설정부------*/
+  /*
   pinMode(COOLER_PIN, OUTPUT); // PWM 핀 설정
   pinMode(HEATER_PIN, OUTPUT);
 
-  //ledcSetup(COOLER_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  //ledcSetup(HEATER_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(COOLER_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
+  ledcSetup(HEATER_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 
-  //ledcAttachPin(COOLER_PIN, COOLER_CHANNEL); // PWM 핀과 채널 연결
-  //ledcAttachPin(HEATER_PIN, HEATER_CHANNEL);
+  ledcAttachPin(COOLER_PIN, COOLER_CHANNEL); // PWM 핀과 채널 연결
+  ledcAttachPin(HEATER_PIN, HEATER_CHANNEL);
   
-  //ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
-  //ledcWrite(HEATER_CHANNEL, pwmValue);
+  ledcWrite(COOLER_CHANNEL, pwmValue); // 초기 PWM 값 설정
+  ledcWrite(HEATER_CHANNEL, pwmValue);
+  */
 }
 /*----------setup----------*/
 
@@ -434,34 +408,31 @@ void loop()
     batteryStatus = BATTERY_HIGH; // 배터리 상태 (상) 설정
   }
 
+  /*Sensors error*/
   if (temperatureC == DEVICE_DISCONNECTED_C) {
     deviceMode = SENSOR_ERROR;
   }
 
+  /*Boot Button*/
+  if (bootButton == true) {
+    deviceMode = TEMPERATURE_SETTING_MODE;
+  }
 
   /*Main System control and Display print*/
   pwmValue = map(userSetTemperature - temperatureC, MIN_TEMPERATURE, MAX_TEMPERATURE, 0, 255);
+  Serial.println(pwmValue);
   u8g2.clearBuffer();
   baseDisplayPrint();
-  batteryDisplayPrint();
   switch (deviceMode)
   {
   case STANBY_MODE:
-  /*Boot Button*/
-    if (bootButton == true) {
-      deviceMode = TEMPERATURE_SETTING_MODE;
-      bootButton = false;
-    }
     allTumblerDisplayPrint();
+    u8g2.sendBuffer();
     break;
 
   case ACTIVE_MODE:
-    /*Boot Button*/
-    if (bootButton == true) {
-      deviceMode = TEMPERATURE_SETTING_MODE;
-      bootButton = false;
-    }
     allTumblerDisplayPrint();
+    u8g2.sendBuffer();
     if (temperatureC + 1.5 < userSetTemperature)
       changeControlMode(HEATER_MODE);
     else if (temperatureC - 1.5 > userSetTemperature)
@@ -479,12 +450,6 @@ void loop()
     break;
 
   case TEMPERATURE_MAINTANENCE_MODE:
-    /*Boot Button*/
-    if (bootButton == true) {
-      deviceMode = TEMPERATURE_SETTING_MODE;
-      bootButton = false;
-    }
-
     allTumblerDisplayPrint();
     if (temperatureC + 2.5 < userSetTemperature)
       changeControlMode(HEATER_MODE);
@@ -492,24 +457,24 @@ void loop()
       changeControlMode(COOLER_MODE);
     else
       changeControlMode(STOP_MODE);
+    u8g2.sendBuffer();
     break;
 
   case TEMPERATURE_SETTING_MODE:
-    if (bootButton == true && (userSetTemperature - temperatureC) > 0.5) 
+    if (bootButton == false && (userSetTemperature - temperatureC) > 0.5) 
     {
       endedSettingTemperatureDisplayPrint();
+      u8g2.sendBuffer();
       deviceMode = ACTIVE_MODE;
-      bootButton = false;
       break;
     }
-    else if (bootButton == true && (userSetTemperature - temperatureC) <= 0.5) 
+    else if (bootButton == false && (userSetTemperature - temperatureC) <= 0.5) 
     {
       endedSettingTemperatureDisplayPrint();
+      u8g2.sendBuffer();
       deviceMode = TEMPERATURE_MAINTANENCE_MODE;
-      bootButton = false;
       break;
     }
-
     settingTemperatureDisplayPrint();
     if (upButton == true) 
     {
@@ -526,14 +491,10 @@ void loop()
   case SENSOR_ERROR:
     u8g2.clearBuffer();
     u8g2.drawStr(20, 20, "SENSOR ERROR");
+    u8g2.sendBuffer();
     changeControlMode(STOP_MODE);
-    if(bootButton == true | upButton == true | downButton == true){
+    if(temperatureC != DEVICE_DISCONNECTED_C);
       deviceMode = STANBY_MODE;
-      bootButton = false;
-      upButton = false;
-      downButton = false;
-    }
-
     break;
 
   case DISPLAY_ERROR:
@@ -544,18 +505,17 @@ void loop()
     break;
 
   case DISPLAY_SLEEP:
-    if (bootButton == true | upButton == true | downButton == true) // 버튼이 눌리면 절전모드 해제
+    if (displaySleepTime + 300000 > millis()) // 버튼이 눌리면 절전모드 해제
     {
       deviceMode = saveMode;
-      u8g2.setPowerSave(0); // 절전모드 해제
-      bootButton = false;
-      upButton = false;
-      downButton = false;
+      //u8g2.setPowerSave(0); // 절전모드 해제
     }
     break;
 
   case BOOTING_MODE:
+    u8g2.clearBuffer();
     startingDisplayPrint();
+    u8g2.sendBuffer();
     delay(3000);
     deviceMode = STANBY_MODE;
     break;
@@ -564,16 +524,16 @@ void loop()
 
     break;
   }
-  u8g2.sendBuffer();
 
 
     /*-----Display Low-Energe Mode-----*/
-  if (displaySleepTime + 600000 < millis()) // 10분 이상 버튼이 눌리지 않으면 절전모드로 전환
+  if (displaySleepTime + 300000 < millis()) // 10초 이상 버튼이 눌리지 않으면 절전모드로 전환
   { 
     saveMode = deviceMode;
     deviceMode = DISPLAY_SLEEP;
     u8g2.setPowerSave(1); // 절전모드 설정
   }
+  
 
 
 
