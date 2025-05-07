@@ -238,6 +238,7 @@ void endedSettingTemperatureDisplayPrint() //온도 설정 Display 관리 함수
   u8g2.print(userSetTemperature); // 설정 온도 출력
   u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도를 조절하는 동안"))/2, 40, "온도를 조절하는 동안"); // 온도를 조절하는 동안 출력
   u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("화상에 주의해 주세요!"))/2, 55, "화상에 주의해 주세요!"); // 화상에 주의해 주세요! 출력
+  delay(2500);  
 }
 /*-----Smooth Display-----*/
 /*
@@ -267,6 +268,7 @@ void IRAM_ATTR downButtonF() //Down Button Interrupt Service Routine
   if (currentTime - lastDebounceTime > debounceDelay)
   {
     lastDebounceTime = currentTime;
+    displaySleepTime = millis(); // 버튼이 눌리면 절전모드 해제
     downButton = true; // 설정온도 하강 버튼 상태 변수
   }
 }
@@ -276,6 +278,7 @@ void IRAM_ATTR upButtonF() //Up Button Interrupt Service Routine
   if (currentTime - lastDebounceTime> debounceDelay)
   {
     lastDebounceTime = currentTime;
+    displaySleepTime = millis(); // 버튼이 눌리면 절전모드 해제
     upButton = true; // 설정온도 상승 버튼 상태 변수
   }
 }
@@ -285,7 +288,8 @@ void IRAM_ATTR bootButtonF() //Boot Button Interrupt Service Routine
   if (currentTime - lastDebounceTime > debounceDelay)
   {
     lastDebounceTime = currentTime;
-    bootButton = !bootButton;
+    displaySleepTime = millis(); // 버튼이 눌리면 절전모드 해제
+    bootButton = true;
   }
 }
 
@@ -377,9 +381,8 @@ void setup()
 /*----------setup----------*/
 
 //button이 하드웨어적으로 debouncing이 구현되어 있을 수 있음 -> debouncing 제거 후 test
-//한글이 포함된 폰트 찾아야 함
-//motor drive사용 x -> mosfet 2개를 사용하는 방식으로 바꿔야함 -> pwm 핀 2개로 제어 -> high / low 상태를 시스템적으로만 정의하고 실제 출력은 pwm만 사용하도록 변경함
-//온도 조절을 위해 알맞은 pwm값을 구해야함
+//한글이 포함된 폰트 찾아야 함 -> u8g2_font_unifont_t_korean2로 변경
+//motor drive사용 -> 제어 방식 결정 필요
 
 /*----------loop----------*/
 
@@ -396,7 +399,7 @@ void loop()
   }
   
   /*-----Battery 상태 관리 함수-----*/
-  //배터리 연결 후 마무리리
+  //배터리 연결 후 마무리
   BatteryVoltage = analogRead(0); // 아날로그 핀 0에서 배터리 전압 읽기
   BatteryVoltage = 4.2 * BatteryVoltage / 4095; // 배터리 전압 변환 (0~4.2V)
   BatteryPercentage = map(BatteryVoltage, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE, 0, 100); // 배터리 전압을 PWM 값으로 변환
@@ -409,18 +412,20 @@ void loop()
     batteryStatus = BATTERY_HIGH; // 배터리 상태 (상) 설정
   }
 
+  /*Boot Button*/
+  if (bootButton == true) {
+    deviceMode = TEMPERATURE_SETTING_MODE;
+    bootButton = false;
+  }
+
   /*Sensors error*/
   if (temperatureC == DEVICE_DISCONNECTED_C) {
     deviceMode = SENSOR_ERROR;
   }
 
-  /*Boot Button*/
-  if (bootButton == true) {
-    deviceMode = TEMPERATURE_SETTING_MODE;
-  }
 
   /*Main System control and Display print*/
-  pwmValue = map(userSetTemperature - temperatureC, MIN_TEMPERATURE, MAX_TEMPERATURE, 0, 255);
+  //pwmValue = map(userSetTemperature - temperatureC, MIN_TEMPERATURE, MAX_TEMPERATURE, 0, 255);
   Serial.println(pwmValue);
   u8g2.clearBuffer();
   baseDisplayPrint();
@@ -466,6 +471,7 @@ void loop()
     {
       endedSettingTemperatureDisplayPrint();
       u8g2.sendBuffer();
+
       deviceMode = ACTIVE_MODE;
       bootButton = false;
       break;
@@ -474,6 +480,7 @@ void loop()
     {
       endedSettingTemperatureDisplayPrint();
       u8g2.sendBuffer();
+
       deviceMode = TEMPERATURE_MAINTANENCE_MODE;
       bootButton = false;
       break;
@@ -501,7 +508,6 @@ void loop()
     break;
 
   case DISPLAY_ERROR:
-    Serial.println("Display initialization failed!");
     changeControlMode(STOP_MODE);
     deviceMode = STANBY_MODE;
     delay(1000); // 1초 대기 후 재시도
@@ -511,7 +517,7 @@ void loop()
     if (displaySleepTime + 300000 > millis()) // 버튼이 눌리면 절전모드 해제
     {
       deviceMode = saveMode;
-      //u8g2.setPowerSave(0); // 절전모드 해제
+      u8g2.setPowerSave(0); // 절전모드 해제
     }
     break;
 
