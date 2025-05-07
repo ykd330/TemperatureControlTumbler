@@ -396,6 +396,7 @@ void loop()
   }
   
   /*-----Battery 상태 관리 함수-----*/
+  //배터리 연결 후 마무리리
   BatteryVoltage = analogRead(0); // 아날로그 핀 0에서 배터리 전압 읽기
   BatteryVoltage = 4.2 * BatteryVoltage / 4095; // 배터리 전압 변환 (0~4.2V)
   BatteryPercentage = map(BatteryVoltage, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE, 0, 100); // 배터리 전압을 PWM 값으로 변환
@@ -461,18 +462,20 @@ void loop()
     break;
 
   case TEMPERATURE_SETTING_MODE:
-    if (bootButton == false && (userSetTemperature - temperatureC) > 0.5) 
+    if (bootButton == true && (userSetTemperature - temperatureC) > 0.5) 
     {
       endedSettingTemperatureDisplayPrint();
       u8g2.sendBuffer();
       deviceMode = ACTIVE_MODE;
+      bootButton = false;
       break;
     }
-    else if (bootButton == false && (userSetTemperature - temperatureC) <= 0.5) 
+    else if (bootButton == true && (userSetTemperature - temperatureC) <= 0.5) 
     {
       endedSettingTemperatureDisplayPrint();
       u8g2.sendBuffer();
       deviceMode = TEMPERATURE_MAINTANENCE_MODE;
+      bootButton = false;
       break;
     }
     settingTemperatureDisplayPrint();
