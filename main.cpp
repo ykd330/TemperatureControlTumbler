@@ -467,34 +467,37 @@ void loop()
     break;
 
   case TEMPERATURE_SETTING_MODE:
-    if (bootButton == true && (userSetTemperature - temperatureC) > 0.5) 
+    while(deviceMode == TEMPERATURE_SETTING_MODE)
     {
-      endedSettingTemperatureDisplayPrint();
-      u8g2.sendBuffer();
+      if (bootButton == true && (userSetTemperature - temperatureC) > 0.5) 
+      {
+        endedSettingTemperatureDisplayPrint();
+        u8g2.sendBuffer();
 
-      deviceMode = ACTIVE_MODE;
-      bootButton = false;
-      break;
-    }
-    else if (bootButton == true && (userSetTemperature - temperatureC) <= 0.5) 
-    {
-      endedSettingTemperatureDisplayPrint();
-      u8g2.sendBuffer();
+        deviceMode = ACTIVE_MODE;
+        bootButton = false;
+        break;
+      }
+      else if (bootButton == true && (userSetTemperature - temperatureC) <= 0.5) 
+      {
+        endedSettingTemperatureDisplayPrint();
+        u8g2.sendBuffer();
 
-      deviceMode = TEMPERATURE_MAINTANENCE_MODE;
-      bootButton = false;
-      break;
-    }
-    settingTemperatureDisplayPrint();
-    if (upButton == true) 
-    {
-      userSetTemperature++;
-      upButton = false;
-    }
-    if (downButton == true) 
-    {
-      userSetTemperature--;
-      downButton = false;
+        deviceMode = TEMPERATURE_MAINTANENCE_MODE;
+        bootButton = false;
+        break;
+      }
+      settingTemperatureDisplayPrint();
+      if (upButton == true) 
+      {
+        userSetTemperature++;
+        upButton = false;
+      }
+      if (downButton == true) 
+      {
+        userSetTemperature--;
+        downButton = false;
+      }
     }
     break;
 
