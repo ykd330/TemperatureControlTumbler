@@ -84,10 +84,11 @@ float pwmValue = 0; // PWM 출력 값 저장 변수
 volatile bool bootButton = false;
 volatile bool upButton = false; // 설정온도 상승 버튼 상태 변수
 volatile bool downButton = false; // 설정온도 하강 버튼 상태 변수
+volatile bool Trigger = false; // 버튼 트리거 상태 변수
 
 /*-----바운싱으로 인한 입력 값 오류 제거용-----*/
 volatile unsigned long lastDebounceTime = 0;   // 마지막 디바운스 시간
-volatile const unsigned long debounceDelay = 50;          // 디바운싱 지연 시간 (밀리초)
+volatile const unsigned long debounceDelay = 100;          // 디바운싱 지연 시간 (밀리초)
 
 /*-----Display 절전모드 제어용 변수-----*/
 float displaySleepTime = 0; // display 절전모드 시간 변수
@@ -104,10 +105,10 @@ float displaySleepTime = 0; // display 절전모드 시간 변수
 /*-----Starting Display Print-----*/
 void startingDisplayPrint()
 { 
-  u8g2.setFont(u8g2_font_ncenB08_tr); // 폰트 설정
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("제작 : 5조"))/2, 23, "제작 : 5조"); 
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Temperature"))/2, 38, "Temperature"); 
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Control Tumbler"))/2, 53, "Control Tumbler"); 
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Temperature"))/2, 39, "Temperature"); 
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Control Tumbler"))/2, 55, "Control Tumbler"); 
 }
 /*-----Main Display Print-----*/
  /*
@@ -219,17 +220,15 @@ void allTumblerDisplayPrint() //Tumbler Display관리 함수
 
 void settingTemperatureDisplayPrint() //온도 설정 Display 관리 함수
 {
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도:"))/2 - 10, 25, "목표 온도:");
-  u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도:"))/2 - 10, 25);
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 설정"))/2 - 10, 16, "온도 설정");
+  u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("50"))/2, 32);
   u8g2.print(userSetTemperature); // 설정 온도 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도증가:AA 온도감소:AA"))/2, 40, "온도증가:"); // 온도증가:▲ 온도감소:▼ 출력
-  u8g2.drawUTF8(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도증가:AA 온도감소:AA"))/2) + u8g2.getUTF8Width("온도증가:") + u8g2.getUTF8Width("AA") + 5, 40, "온도감소:"); // 온도증가:▲ 온도감소:▼ 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 설정정 : 전원 버튼"))/2, 55, "온도 설정 : 전원 버튼"); // 온도 설징 : 전원 버튼 출력
-  //기호 출력 
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("증가:AAA감소:AAA"))/2, 48, "증가:   감소:"); // 온도 설정 : 전원 버튼 출력
+  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("완료: 전원버튼"))/2, 55, "완료: 전원버튼"); // 온도 설정 : 전원 버튼 출력
   u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
-  u8g2.drawUTF8(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("목표 온도:"))/2 - 10 ) + u8g2.getUTF8Width("50"), 25, "℃"); // 설정 온도 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도증가:AA 온도감소:AA"))/2 + u8g2.getUTF8Width("온도증가:"), 40, "▲"); // 온도증가:▲ 온도감소:▼ 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도증가:AA 온도감소:AA"))/2 + u8g2.getUTF8Width("온도증가:") + u8g2.getUTF8Width("AA") + 5 + u8g2.getUTF8Width("온도감소:"), 40, "▼"); // 온도증가:▲ 온도감소:▼ 출력
+  u8g2.print("℃"); // 설정 온도 출력
+  u8g2.drawUTF8(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("증가:AAA감소:AAA"))/2) + u8g2.getUTF8Width("증가:"), 48, "▲"); // 설정 온도 출력
+  u8g2.drawUTF8(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("증가:AAA감소:AAA"))/2) + u8g2.getUTF8Width("증가:AAA") + u8g2.getUTF8Width("감소:"), 48, "▼"); // 설정 온도 출력
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
 
 }
@@ -405,10 +404,13 @@ void loop()
   
   /*Boot Button*/
   if (bootButton == true) {
-    if (deviceMode != TEMPERATURE_MAINTANENCE_MODE || deviceMode != TEMPERATURE_SETTING_MODE) {
-      bootButton = false;
+    if (deviceMode == TEMPERATURE_MAINTANENCE_MODE || deviceMode == TEMPERATURE_SETTING_MODE || deviceMode == ACTIVE_MODE) {
+      Trigger = true;
     }
-    deviceMode = TEMPERATURE_SETTING_MODE;
+    else {
+      bootButton = false;
+      deviceMode = TEMPERATURE_SETTING_MODE;
+    }
   }
 
   /*Main System control and Display print*/
@@ -440,68 +442,122 @@ void loop()
       userSetTemperature--;
       downButton = false;
     }
+    if (bootButton == true) 
+    {
+      u8g2.clearBuffer();
+      baseDisplayPrint();
+      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 조절을"))/2, 30, "온도 조절을");
+      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료하시겠습니까?"))/2, 46, "종료하시겠습니까?");
+
+      switch (TM_count)
+      {
+      case 0:
+        u8g2.drawButtonUTF8(50, 63, U8G2_BTN_BW0 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
+        u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+        u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
+        break;
+      
+      case 1:
+        u8g2.drawUTF8(50, 63, "YES");
+        u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+        u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, U8G2_BTN_BW0 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
+        break;
+      
+      case 2:
+        TM_count = 0;
+      
+      case -1:
+        TM_count = 1;
+      }
+
+      // 버튼을 눌렀을 때
+      // upButton과 downButton이 true일 때 TM_count를 증가 또는 감소시킴
+      if (upButton == true) 
+      {
+        TM_count++;
+        upButton = false;
+      }
+
+      if (downButton == true) 
+      {
+        TM_count--;
+        downButton = false;
+      }
+
+      if (Trigger == true) 
+      {
+        if (TM_count == 0) 
+        {
+          deviceMode = STANBY_MODE;
+          Trigger = false;
+          bootButton = false;
+        }
+        else if (TM_count == 1) 
+        {
+          Trigger = false;
+          bootButton = false;
+        }
+      }
+    }
+    TM_count = 0;
     break;
 
   case TEMPERATURE_MAINTANENCE_MODE:
-    if(bootButton == true) {
-      bootButton = false;
-      while (1)
+    if(bootButton == true) 
+    {
+      u8g2.clearBuffer();
+      baseDisplayPrint();
+      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 유지를"))/2, 30, "온도 유지를");
+      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료하시겠습니까?"))/2, 46, "종료하시겠습니까?");
+
+      switch (TM_count)
       {
-        u8g2.clearBuffer();
-        baseDisplayPrint();
-        u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 조절을"))/2, 30, "온도 조절을");
-        u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료하시겠습니까?"))/2, 46, "종료하시겠습니까?");
-
-        switch (TM_count)
-        {
-        case 0:
-          u8g2.drawButtonUTF8(50, 63, U8G2_BTN_BW0 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
-          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
-          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
-          break;
+      case 0:
+        u8g2.drawButtonUTF8(50, 63, U8G2_BTN_BW0 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
+        u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+        u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
+        break;
       
-        case 1:
-          u8g2.drawUTF8(50, 63, "YES");
-          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
-          u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, U8G2_BTN_BW0 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
-          break;
+      case 1:
+        u8g2.drawUTF8(50, 63, "YES");
+        u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+        u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, U8G2_BTN_BW0 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
+        break;
       
-        case 2:
-          TM_count = 0;
+      case 2:
+        TM_count = 0;
       
-        case -1:
-          TM_count = 1;
-        }
-
-        // 버튼을 눌렀을 때
-        // upButton과 downButton이 true일 때 TM_count를 증가 또는 감소시킴
-        if (upButton == true) 
-        {
-          TM_count++;
-          upButton = false;
-        }
-        if (downButton == true) 
-        {
-          TM_count--;
-          downButton = false;
-        }
-        // TM_count를 기준으로 YES와 NO 버튼을 선택함
-        if(bootButton == true) 
-        {
-          if (TM_count == 0) 
-          {
-            deviceMode = STANBY_MODE;
-            bootButton = false;
-            break;
-          }
-          else if (TM_count == 1) 
-          {
-            bootButton = false;
-            break;
-          }
-        }
-       u8g2.sendBuffer();
+      case -1:
+        TM_count = 1;
       }
+
+      // 버튼을 눌렀을 때
+      // upButton과 downButton이 true일 때 TM_count를 증가 또는 감소시킴
+      if (upButton == true) 
+      {
+        TM_count++;
+        upButton = false;
+      }
+      if (downButton == true) 
+      {
+        TM_count--;
+        downButton = false;
+      }
+      
+      if (Trigger == true) {
+        if (TM_count == 0) 
+        {
+          deviceMode = STANBY_MODE;
+          Trigger = false;
+          bootButton = false;
+        }
+        else if (TM_count == 1) 
+        {
+          Trigger = false;
+          bootButton = false;
+        }
+      }
+      TM_count = 0;
     }
     else {
       allTumblerDisplayPrint();
@@ -516,7 +572,7 @@ void loop()
     break;
 
   case TEMPERATURE_SETTING_MODE:
-    if (bootButton == true) 
+    if (Trigger == true) 
     {
       u8g2.clearBuffer();
       endedSettingTemperatureDisplayPrint();
@@ -524,14 +580,15 @@ void loop()
       delay(3000);
       if(userSetTemperature - temperatureC > 0.5) {
         deviceMode = ACTIVE_MODE;
-        bootButton = false;
+        Trigger = false;
       }
       else if(userSetTemperature - temperatureC <= 0.5) {
         deviceMode = TEMPERATURE_MAINTANENCE_MODE;
-        bootButton = false;
+        Trigger = false;
       }
       break;
     }
+    u8g2.clearBuffer();
     settingTemperatureDisplayPrint();
     if (upButton == true) 
     {
@@ -543,7 +600,7 @@ void loop()
       userSetTemperature--;
       downButton = false;
     }
-    
+    u8g2.sendBuffer();
     break;
 
   
