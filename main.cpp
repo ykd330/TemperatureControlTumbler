@@ -91,10 +91,11 @@ volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
 unsigned int dutyCycle = 0; //
 
 /*-----시스템 한계 온도 설정-----*/
-#define MAX_TEMPERATURE 125       // 최대 온도 125'C
-#define MIN_TEMPERATURE -55       // 최소 온도 -55'C
-#define SYSTEM_MIN_TEMPERATURE 5  // 시스템 최소 온도 5'C
-#define SYSTEM_MAX_TEMPERATURE 80 // 시스템 최대 온도 80'C
+enum SysyemLimitTemperature
+{
+  SYSYEM_LIMIT_MAX_TEMPERATURE = 80, // 시스템 한계 온도
+  SYSTEM_LIMIT_MIN_TEMPERATURE = 5 // 시스템 한계 온도
+};
 
 /*-----Interrupt 버튼 triger 선언부-----*/
 volatile bool bootButton = false;
@@ -436,7 +437,7 @@ void PushButtonTempSetFunction()
 {
   if (upButton == true)
   {
-    if (userSetTemperature < MAX_TEMPERATURE)
+    if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
     {
       userSetTemperature++;
     }
@@ -444,7 +445,7 @@ void PushButtonTempSetFunction()
   }
   if (downButton == true)
   {
-    if (userSetTemperature > MIN_TEMPERATURE)
+    if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
     {
       userSetTemperature--;
     }
