@@ -94,7 +94,7 @@ unsigned int dutyCycle = 0; //
 enum SysyemLimitTemperature
 {
   SYSYEM_LIMIT_MAX_TEMPERATURE = 80, // 시스템 한계 온도
-  SYSTEM_LIMIT_MIN_TEMPERATURE = 5 // 시스템 한계 온도
+  SYSTEM_LIMIT_MIN_TEMPERATURE = 5   // 시스템 한계 온도
 };
 
 /*-----Interrupt 버튼 triger 선언부-----*/
@@ -132,20 +132,27 @@ void startingDisplayPrint()
 /*-----Base DisplayPrint-----*/
 void baseDisplayPrint() // 기본 Display 내용 출력 함수
 {
-  u8g2.drawLine(0, 13, 127, 13); // 가로선 그리기
+  u8g2.drawLine(0, 13, 127, 13);             // 가로선 그리기
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   if (BatteryChargeStatus == false)
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
+    {
       u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("100%")), 12); // 배터리 상태 표시
+    }
     else if (BatteryPercentage == BATTERY_STATUS_LOW)
     {
       u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("100%"))) / 2, 12); // 배터리 상태 표시
       u8g2.print("please charge battery");                                            // 배터리 상태 표시
     }
     else
+    {
       u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("99%")), 12); // 배터리 상태 표시
-    u8g2.print(BatteryPercentage);                                             // 배터리 상태 표시
-    u8g2.print("%");                                                           // 배터리 상태 표시
+    }
+    u8g2.print(BatteryPercentage);
+    u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
+    u8g2.print("%");
+    u8g2.setFont(u8g2_font_unifont_t_korean2); // 배터리 상태 표시
   }
   else
   {
@@ -403,13 +410,13 @@ void ButtonTriggerEnableFunction()
     u8g2.sendBuffer();
     saveUserSetTemperature(userSetTemperature); // 설정 온도 저장
     delay(3000);
-    if (userSetTemperature - temperatureC > 0.5)
+    if (((temperatureC >= userSetTemperature) ? temperatureC - userSetTemperature : userSetTemperature - temperatureC) > 0.5)
     {
       deviceMode = ACTIVE_MODE;
       Trigger = false;
       bootButton = false;
     }
-    else if (userSetTemperature - temperatureC <= 0.5)
+    else if (((temperatureC >= userSetTemperature) ? temperatureC - userSetTemperature : userSetTemperature - temperatureC) <= 0.5)
     {
       deviceMode = TEMPERATURE_MAINTANENCE_MODE;
       Trigger = false;
