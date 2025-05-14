@@ -105,6 +105,8 @@ volatile bool Trigger = false;    // 버튼 트리거 상태 변수
 volatile bool Trigger_YN = false; // 버튼 트리거 상태 변수
 volatile int TM_count = 0;
 volatile static unsigned long reBootCheck = 0; // 버튼 트리거 시간 변수
+volatile static unsigned long upButtonTime = 0; // upButton Trigger
+volatile static unsigned long downButtonTime = 0; // downButton Trigger
 
 /*-----바운싱으로 인한 입력 값 오류 제거용-----*/
 volatile unsigned long lastDebounceTimeUp = 0;    // 마지막 디바운스 시간 UP
@@ -442,21 +444,72 @@ void ButtonTriggerEnableFunction()
 // 설정 온도 증가 / 감소 버튼 함수
 void PushButtonTempSetFunction()
 {
-  if (upButton == true)
+  if (digitalRead(BUTTON_UP) == HIGH)
   {
-    if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+    if (upButtonTime == 0)
+      upButtonTime = millis();
+    if (upButton == true)
     {
-      userSetTemperature++;
+      if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+      {
+        userSetTemperature++;
+      }
+      upButton = false;
     }
-    upButton = false;
+    else if (millis() - upButtonTime >= 2000 && upButton == false) // UpButton Toggle - 미구현 
+    {
+      if (millis() - upButtonTime <= 6000 && millis() - upButtonTime >= 2000 && (millis() - upButtonTime) % 500 == 0)
+      {
+        if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+        {
+          userSetTemperature++;
+        }
+      }
+      else if (millis() - upButtonTime >= 6000 && (millis() - upButtonTime) % 150 == 0)
+      {
+        if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+        {
+          userSetTemperature++;
+        }
+      }
+    }
   }
-  if (downButton == true)
+  else {
+    upButtonTime = 0;
+  }
+
+  if (digitalRead(BUTTON_DOWN) == HIGH)
   {
-    if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+    if (downButtonTime == 0)
+      downButtonTime = millis();
+    if (downButton == true)
     {
-      userSetTemperature--;
+      if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+      {
+        userSetTemperature--;
+      }
+      downButton = false;
     }
-    downButton = false;
+    else if (millis() - downButtonTime >= 2000)// DownButton Toggle - 미구현
+    {
+      if (millis() - downButtonTime <= 6000 && millis() - downButtonTime >= 2000 && (millis() - downButtonTime) % 500 == 0)
+      {
+        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+        {
+          userSetTemperature--;
+        }
+      }
+      else if (millis() - downButtonTime >= 6000 && (millis() - downButtonTime) % 150 == 0)
+      {
+        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+        {
+          userSetTemperature--;
+        }
+      }
+    }
+  }
+  else {
+    downButtonTime = 0;
   }
 }
 // Trigger 활성화시 작동되는 함수
