@@ -91,7 +91,7 @@ volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
 unsigned int dutyCycle = 0; //
 
 /*-----시스템 한계 온도 설정-----*/
-enum SysyemLimitTemperature
+enum SystemLimitTemperature
 {
   SYSYEM_LIMIT_MAX_TEMPERATURE = 80, // 시스템 한계 온도
   SYSTEM_LIMIT_MIN_TEMPERATURE = 5   // 시스템 한계 온도
@@ -99,14 +99,22 @@ enum SysyemLimitTemperature
 
 /*-----Interrupt 버튼 triger 선언부-----*/
 volatile bool bootButton = false;
-volatile bool upButton = false;   // 설정온도 상승 버튼 상태 변수
-volatile bool downButton = false; // 설정온도 하강 버튼 상태 변수
-volatile bool Trigger = false;    // 버튼 트리거 상태 변수
-volatile bool Trigger_YN = false; // 버튼 트리거 상태 변수
-volatile int TM_count = 0;
-volatile static unsigned long reBootCheck = 0; // 버튼 트리거 시간 변수
-volatile static unsigned long upButtonTime = 0; // upButton Trigger
-volatile static unsigned long downButtonTime = 0; // downButton Trigger
+volatile bool upButton = false;               // 설정온도 상승 버튼 상태 변수
+volatile bool downButton = false;             // 설정온도 하강 버튼 상태 변수
+bool Trigger = false;                // 버튼 트리거 상태 변수
+bool Trigger_YN = false;             // 버튼 트리거 상태 변수
+bool upButtonLowRepeatToggle = false;         // upButton Toggle 상태 변수
+bool upButtonHighRepeatToggle = false;        // upButton Toggle 상태 변수
+bool downButtonLowRepeatToggle = false;       // downButton Toggle 상태 변수
+bool downButtonHighRepeatToggle = false;      // downButton Toggle 상태 변수
+bool checkToBootButtonTogle = false; // 부팅 버튼 토글 상태 변수
+int TM_count = 0;
+static unsigned long reBootCheck = 0;    // 버튼 트리거 시간 변수
+static unsigned long upButtonCheckTime = 0;   // upButton Trigger
+static unsigned long upButtonToggleTime = 0; // upButton Trigger
+static unsigned long downButtonCheckTime = 0; // downButton Trigger
+static unsigned long downButtonToggleTime = 0; // downButton Trigger
+
 
 /*-----바운싱으로 인한 입력 값 오류 제거용-----*/
 volatile unsigned long lastDebounceTimeUp = 0;    // 마지막 디바운스 시간 UP
@@ -188,31 +196,31 @@ void ActiveDisplayPrint()
   u8g2.print("℃");                                        // 설정 온도 출력
   u8g2.setFont(u8g2_font_unifont_t_korean2);              // 폰트 설정
   // 애니메이션 효과 - 1초마다 Display에 출력되는 글자 변경
-  unsigned int DisplayAnimationPrintWitthFixel = u8g2.getUTF8Width("10℃") + 20; // 애니메이션 효과 시작 위치
+  unsigned int DisplayAnimationPrintWidthFixel = u8g2.getUTF8Width("10℃") + 20; // 애니메이션 효과 시작 위치
   switch ((millis() / 1000) % 6)
   {
   case 0:
-    u8g2.drawUTF8(DisplayAnimationPrintWitthFixel, 47, "");
+    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "");
     break;
 
   case 1:
-    u8g2.drawUTF8(DisplayAnimationPrintWitthFixel, 47, "-");
+    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "-");
     break;
 
   case 2:
-    u8g2.drawUTF8(DisplayAnimationPrintWitthFixel, 47, "--");
+    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "--");
     break;
 
   case 3:
-    u8g2.drawUTF8(DisplayAnimationPrintWitthFixel, 47, "---");
+    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "---");
     break;
 
   case 4:
-    u8g2.drawUTF8(DisplayAnimationPrintWitthFixel, 47, "----");
+    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "----");
     break;
 
   case 5:
-    u8g2.drawUTF8(DisplayAnimationPrintWitthFixel, 47, "---->");
+    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "---->");
     break;
   }
   if (ActiveFeltier == HEATER_MODE)
@@ -232,12 +240,12 @@ void TMDisplayPrint() // 유지 모드 Display 관리 함수
   u8g2.print(userSetTemperature);                      // 설정 온도 출력
   u8g2.drawUTF8(0, 50, "온도 유지 중");                // 설정 온도 출력
   u8g2.setFont(u8g2_font_unifont_h_symbols);           // 폰트 설정
-  u8g2.print("℃");                                     // 설정 온도 출력
+  u8g2.print("℃");
+  u8g2.setFont(u8g2_font_unifont_t_korean2);
 }
 
 void settingTemperatureDisplayPrint() // 온도 설정 Display 관리 함수
 {
-  // 글자 위치가 이상하게 출력되는 버그 발견 -> 원인 찾을 필요O - 해결
   u8g2.setCursor(0, 0);               // 커서 위치 설정
   u8g2.drawUTF8(0, 16, "설정온도: "); // 설정 온도 출력
   u8g2.setCursor(u8g2.getUTF8Width("설정온도: "), 16);
@@ -359,26 +367,52 @@ void loadUserSetTemperature()
 void PushedButtonFunction()
 {
   // BootButton Logic
-  if (bootButton == true && DisplaySleeping == false)
+
+  /*-----Boot 버튼 Long Press Check-----*/
+  // Boot 버튼을 5초 이상 누르면 Deep Sleep 모드로 전환 -> 오류 발생시 Deep Sleep 모드로 전환 후 재부팅
+  if (bootButton == true)
+    checkToBootButtonTogle = true; // Boot 버튼이 눌리면 checkToBootButtonTogle을 true로 설정
+  if (checkToBootButtonTogle == true && digitalRead(BUTTON_BOOT) == HIGH)
   {
-    if ((deviceMode == TEMPERATURE_MAINTANENCE_MODE || deviceMode == TEMPERATURE_SETTING_MODE || deviceMode == ACTIVE_MODE) && Trigger == false)
+    if (reBootCheck == 0)
     {
-      Trigger = true;
-      if (deviceMode == ACTIVE_MODE || deviceMode == TEMPERATURE_MAINTANENCE_MODE)
+      reBootCheck = millis();
+    }
+    if (millis() - reBootCheck >= 5000)
+    {
+      checkToBootButtonTogle = false; // Boot 버튼을 5초 이상 누르면 checkToBootButtonTogle을 false로 설정
+      bootButton = false;         // bootButton을 false로 설정
+      esp_sleep_enable_timer_wakeup(5 * 1000000);                        // 5초 후 Deep Sleep 모드 해제 설정
+      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO); // RTC Peripherals 전원 차단
+      esp_deep_sleep_start();                                            // Boot버튼을 5초 유지하면 ESP32-C3 Deep Sleep 모드로 전환
+      reBootCheck = 0;
+    }
+  }
+  else if (digitalRead(BUTTON_BOOT) == LOW && checkToBootButtonTogle == true)
+  {
+    reBootCheck = 0; // Boot버튼을 떼면 reBootCheck 초기화
+    if (bootButton == true && DisplaySleeping == false)
+    {
+      if ((deviceMode == TEMPERATURE_MAINTANENCE_MODE || deviceMode == TEMPERATURE_SETTING_MODE || deviceMode == ACTIVE_MODE) && Trigger == false)
+      {
+        Trigger = true;
+        if (deviceMode == ACTIVE_MODE || deviceMode == TEMPERATURE_MAINTANENCE_MODE)
+        {
+          bootButton = false;
+        }
+      }
+      else if (Trigger == true && Trigger_YN == false)
+      {
+        Trigger_YN = true;
+      }
+      else
       {
         bootButton = false;
+        if (deviceMode != ACTIVE_MODE)
+          deviceMode = TEMPERATURE_SETTING_MODE;
       }
     }
-    else if (Trigger == true && Trigger_YN == false)
-    {
-      Trigger_YN = true;
-    }
-    else
-    {
-      bootButton = false;
-      if (deviceMode != ACTIVE_MODE)
-        deviceMode = TEMPERATURE_SETTING_MODE;
-    }
+    checkToBootButtonTogle = false; // Boot 버튼을 떼면 checkToBootButtonTogle을 false로 설정
   }
 
   // 절전모드 Button Logic
@@ -446,70 +480,84 @@ void PushButtonTempSetFunction()
 {
   if (digitalRead(BUTTON_UP) == HIGH)
   {
-    if (upButtonTime == 0)
-      upButtonTime = millis();
-    if (upButton == true)
+    if (upButtonToggleTime == 0)
     {
-      if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+      upButtonToggleTime = millis();
+      if (upButton == true)
+      {
+        if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+          userSetTemperature++;
+        upButton = false;
+        upButtonLowRepeatToggle = true;
+      }
+    }
+    if (upButtonLowRepeatToggle && (millis() - upButtonToggleTime >= 2000))
+    {
+      if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE && millis() - upButtonCheckTime >= 500)
       {
         userSetTemperature++;
+        upButtonCheckTime = millis();
       }
-      upButton = false;
-    }
-    else if (millis() - upButtonTime >= 2000 && upButton == false) // UpButton Toggle - 미구현 
-    {
-      if (millis() - upButtonTime <= 6000 && millis() - upButtonTime >= 2000 && (millis() - upButtonTime) % 500 == 0)
+      if ((millis() - upButtonToggleTime >= 5000))
       {
-        if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
-        {
-          userSetTemperature++;
-        }
-      }
-      else if (millis() - upButtonTime >= 6000 && (millis() - upButtonTime) % 150 == 0)
-      {
-        if (userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
-        {
-          userSetTemperature++;
-        }
+        upButtonHighRepeatToggle = true;
+        upButtonLowRepeatToggle = false;
       }
     }
+    else if (upButtonHighRepeatToggle)
+      if (millis() - upButtonCheckTime >= 200 && userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+      {
+        userSetTemperature++;
+        upButtonCheckTime = millis();
+      }
   }
-  else {
-    upButtonTime = 0;
+  else
+  {
+    upButtonHighRepeatToggle = false;
+    upButtonLowRepeatToggle = false;
+    upButtonCheckTime = 0;
+    upButtonToggleTime = 0;
   }
 
   if (digitalRead(BUTTON_DOWN) == HIGH)
   {
-    if (downButtonTime == 0)
-      downButtonTime = millis();
-    if (downButton == true)
+    if (downButtonToggleTime == 0)
     {
-      if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+      downButtonToggleTime = millis();
+      if (downButton == true)
+      {
+        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+          userSetTemperature--;
+        downButton = false;
+        downButtonLowRepeatToggle = true;
+      }
+    }
+    if (downButtonLowRepeatToggle && (millis() - downButtonToggleTime >= 2000))
+    {
+      if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE && millis() - downButtonCheckTime >= 500)
       {
         userSetTemperature--;
+        downButtonCheckTime = millis();
       }
-      downButton = false;
-    }
-    else if (millis() - downButtonTime >= 2000)// DownButton Toggle - 미구현
-    {
-      if (millis() - downButtonTime <= 6000 && millis() - downButtonTime >= 2000 && (millis() - downButtonTime) % 500 == 0)
+      if ((millis() - downButtonToggleTime >= 5000))
       {
-        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-        {
-          userSetTemperature--;
-        }
-      }
-      else if (millis() - downButtonTime >= 6000 && (millis() - downButtonTime) % 150 == 0)
-      {
-        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-        {
-          userSetTemperature--;
-        }
+        downButtonHighRepeatToggle = true;
+        downButtonLowRepeatToggle = false;
       }
     }
+    else if (downButtonHighRepeatToggle)
+      if (millis() - downButtonCheckTime >= 200 && userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+      {
+        userSetTemperature--;
+        downButtonCheckTime = millis();
+      }
   }
-  else {
-    downButtonTime = 0;
+  else
+  {
+    downButtonHighRepeatToggle = false;
+    downButtonLowRepeatToggle = false;
+    downButtonCheckTime = 0;
+    downButtonToggleTime = 0;
   }
 }
 // Trigger 활성화시 작동되는 함수
@@ -676,25 +724,6 @@ void loop()
     BatteryChargeStatus = false; // 비충전 상태
   }
 
-  /*-----Boot 버튼 Long Press Check-----*/
-  // Boot 버튼을 5초 이상 누르면 Deep Sleep 모드로 전환 -> 오류 발생시 Deep Sleep 모드로 전환 후 재부팅
-  if (digitalRead(BUTTON_BOOT) == HIGH)
-  {
-    if (reBootCheck == 0)
-    {
-      reBootCheck = millis();
-    }
-    if (millis() - reBootCheck >= 5000)
-    {
-      esp_sleep_enable_timer_wakeup(5 * 1000000);                        // 5초 후 Deep Sleep 모드 해제 설정
-      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO); // RTC Peripherals 전원 차단
-      esp_deep_sleep_start();                                            // Boot버튼을 5초 유지하면 ESP32-C3 Deep Sleep 모드로 전환
-      reBootCheck = 0;
-    }
-  }
-  else
-    reBootCheck = 0; // Boot버튼을 떼면 reBootCheck 초기화
-
   PushedButtonFunction(); // 버튼 입력 처리 함수
 
   /*-----Display Low-Energe Mode-----*/
@@ -805,6 +834,5 @@ void loop()
     deviceMode = STANBY_MODE;
     break;
   }
-  delay(100); // 100ms 대기
 }
 /*----------loop----------*/
