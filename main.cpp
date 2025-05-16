@@ -6,7 +6,6 @@
 #include <U8g2lib.h>
 #include <FS.h>
 #include <LittleFS.h>
-// #include "u8g2_font_unifont_t_NanumGothic.h"
 //--------------------------------------------------
 
 /*----------전역변수 / 클래스 선언부----------*/
@@ -99,22 +98,21 @@ enum SystemLimitTemperature
 
 /*-----Interrupt 버튼 triger 선언부-----*/
 volatile bool bootButton = false;
-volatile bool upButton = false;               // 설정온도 상승 버튼 상태 변수
-volatile bool downButton = false;             // 설정온도 하강 버튼 상태 변수
-bool Trigger = false;                // 버튼 트리거 상태 변수
-bool Trigger_YN = false;             // 버튼 트리거 상태 변수
-bool upButtonLowRepeatToggle = false;         // upButton Toggle 상태 변수
-bool upButtonHighRepeatToggle = false;        // upButton Toggle 상태 변수
-bool downButtonLowRepeatToggle = false;       // downButton Toggle 상태 변수
-bool downButtonHighRepeatToggle = false;      // downButton Toggle 상태 변수
-bool checkToBootButtonTogle = false; // 부팅 버튼 토글 상태 변수
+volatile bool upButton = false;          // 설정온도 상승 버튼 상태 변수
+volatile bool downButton = false;        // 설정온도 하강 버튼 상태 변수
+bool Trigger = false;                    // 버튼 트리거 상태 변수
+bool Trigger_YN = false;                 // 버튼 트리거 상태 변수
+bool upButtonLowRepeatToggle = false;    // upButton Toggle 상태 변수
+bool upButtonHighRepeatToggle = false;   // upButton Toggle 상태 변수
+bool downButtonLowRepeatToggle = false;  // downButton Toggle 상태 변수
+bool downButtonHighRepeatToggle = false; // downButton Toggle 상태 변수
+bool checkToBootButtonTogle = false;     // 부팅 버튼 토글 상태 변수
 int TM_count = 0;
-static unsigned long reBootCheck = 0;    // 버튼 트리거 시간 변수
-static unsigned long upButtonCheckTime = 0;   // upButton Trigger
-static unsigned long upButtonToggleTime = 0; // upButton Trigger
-static unsigned long downButtonCheckTime = 0; // downButton Trigger
+static unsigned long reBootCheck = 0;          // 버튼 트리거 시간 변수
+static unsigned long upButtonCheckTime = 0;    // upButton Trigger
+static unsigned long upButtonToggleTime = 0;   // upButton Trigger
+static unsigned long downButtonCheckTime = 0;  // downButton Trigger
 static unsigned long downButtonToggleTime = 0; // downButton Trigger
-
 
 /*-----바운싱으로 인한 입력 값 오류 제거용-----*/
 volatile unsigned long lastDebounceTimeUp = 0;    // 마지막 디바운스 시간 UP
@@ -131,12 +129,39 @@ unsigned long displaySleepTime = 0; // display 절전모드 시간 변수
 // 5. Battery관련 내용을 출력할 방식을 고안해야함.
 
 /*-----Starting Display Print-----*/
+enum checkreturnPixelMode
+{
+  BASIC = 0,
+  WIDTH_CENTER = 1,
+  WIDTH_CENTER_X2 = 2,
+};
+
+int returnTextWidthPixel(const char *Text, checkreturnPixelMode Mode = BASIC)
+{
+  switch (Mode)
+  {
+  case BASIC:
+    return u8g2.getUTF8Width(Text);
+
+  case WIDTH_CENTER:
+    return (u8g2.getDisplayWidth() - u8g2.getUTF8Width(Text)) / 2;
+
+  case WIDTH_CENTER_X2:
+    return (u8g2.getDisplayWidth() - u8g2.getUTF8Width(Text));
+
+  default:
+    return false;
+  }
+}
+
 void startingDisplayPrint()
 {
+  u8g2.setFont(u8g2_font_ncenB08_tr);
+  u8g2.drawUTF8(returnTextWidthPixel("Temperature", WIDTH_CENTER), 39, "Temperature");
+  u8g2.drawUTF8(returnTextWidthPixel("Control Tumbler", WIDTH_CENTER), 55, "Control Tumbler");
+
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("제작 : 5조")) / 2, 23, "제작 : 5조");
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Temperature")) / 2, 39, "Temperature");
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("Control Tumbler")) / 2, 55, "Control Tumbler");
+  u8g2.drawUTF8(returnTextWidthPixel("제작 : 5조", WIDTH_CENTER), 23, "제작 : 5조");
 }
 
 /*-----Base DisplayPrint-----*/
@@ -148,16 +173,16 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
     {
-      u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("100%")), 12); // 배터리 상태 표시
+      u8g2.setCursor(returnTextWidthPixel("100%", WIDTH_CENTER_X2), 12); // 배터리 상태 표시
     }
     else if (BatteryPercentage == BATTERY_STATUS_LOW)
     {
-      u8g2.setCursor(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("100%"))) / 2, 12); // 배터리 상태 표시
-      u8g2.print("please charge battery");                                            // 배터리 상태 표시
+      u8g2.setCursor((returnTextWidthPixel("100%", WIDTH_CENTER)), 12); // 배터리 상태 표시
+      u8g2.print("please charge battery");                              // 배터리 상태 표시
     }
     else
     {
-      u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("99%")), 12); // 배터리 상태 표시
+      u8g2.setCursor(returnTextWidthPixel("99%", WIDTH_CENTER_X2), 12); // 배터리 상태 표시
     }
     u8g2.print(BatteryPercentage);
     u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
@@ -167,7 +192,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수
   else
   {
     u8g2.setFont(u8g2_font_unifont_h_symbols);
-    u8g2.drawUTF8(u8g2.getDisplayWidth() - u8g2.getUTF8Width("🗲"), 12, "🗲"); // 충전 중 표시
+    u8g2.drawUTF8(returnTextWidthPixel("🗲", WIDTH_CENTER_X2), 12, "🗲"); // 충전 중 표시
     u8g2.setFont(u8g2_font_unifont_t_korean2);
   }
 }
@@ -176,95 +201,95 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수
 volatile unsigned int AaCo = 0; // 대기 중 카운트 변수
 void StanbyDisplayPrint()       // 대기 모드 Display 관리 함수
 {
-  u8g2.setFont(u8g2_font_unifont_t_korean2);                                                     // 폰트 설정
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("현재 온도")) / 2, 30, "현재 온도"); // 현재 온도 출력
-  u8g2.setFont(u8g2_font_unifont_h_symbols);                                                     // 폰트 설정
-  u8g2.setCursor((u8g2.getDisplayWidth() - u8g2.getUTF8Width("10℃")) / 2, 50);                   // 현재 온도 출력
-  u8g2.print(int(temperatureC));                                                                 // 현재 온도 출력
+  u8g2.setFont(u8g2_font_unifont_h_symbols);                                         // 폰트 설정
+  u8g2.setCursor((returnTextWidthPixel("10℃", WIDTH_CENTER)), 50);                   // 현재 온도 출력
+  u8g2.print(int(temperatureC));                                                     // 현재 온도 출력
   u8g2.print("℃");
+
+  u8g2.setFont(u8g2_font_unifont_t_korean2);                                         // 폰트 설정
+  u8g2.drawUTF8((returnTextWidthPixel("현재 온도", WIDTH_CENTER)), 30, "현재 온도"); // 현재 온도 출력
 }
 
 void ActiveDisplayPrint()
 {
-  u8g2.drawUTF8(0, 30, "온도 조절 중...");
+  const char *AnimationCharacter[8] = {
+      " ",
+      "-",
+      "--",
+      "---",
+      "----",
+      "-----",
+      "----->",
+  };
+  u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정   
   u8g2.setCursor(2, 47);
-  u8g2.print(temperatureC);                               // 현재 온도 출력
-  u8g2.setFont(u8g2_font_unifont_h_symbols);              // 폰트 설정
+  u8g2.print(temperatureC);          
   u8g2.print("℃");                                        // 현재 온도 출력
   u8g2.setCursor(u8g2.getUTF8Width(" 10℃  ---->  "), 47); // 현재 온도 출력
   u8g2.print(userSetTemperature);                         // 설정 온도 출력
-  u8g2.print("℃");                                        // 설정 온도 출력
-  u8g2.setFont(u8g2_font_unifont_t_korean2);              // 폰트 설정
+  u8g2.print("℃");
+  if (ActiveFeltier == COOLER_MODE)
+    u8g2.drawGlyph(returnTextWidthPixel("가열 중"), 63, 2668);
+  if (ActiveFeltier == HEATER_MODE)
+    u8g2.drawGlyph(returnTextWidthPixel("냉각 중"), 63, 2744);
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 한글 폰트
+  u8g2.drawUTF8(0, 30, "온도 조절 중...");                  // 현재 온도 출력                                     // 설정 온도 출력
   // 애니메이션 효과 - 1초마다 Display에 출력되는 글자 변경
-  unsigned int DisplayAnimationPrintWidthFixel = u8g2.getUTF8Width("10℃") + 20; // 애니메이션 효과 시작 위치
-  switch ((millis() / 1000) % 6)
-  {
-  case 0:
-    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "");
-    break;
+  unsigned int DisplayAnimationPrintWidthFixel = u8g2.getUTF8Width("10℃") + 15; // 애니메이션 효과 시작 위치
+  u8g2.setCursor(DisplayAnimationPrintWidthFixel, 47);
+  u8g2.print(AnimationCharacter[(millis() / 1000) % 7]);
 
-  case 1:
-    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "-");
-    break;
-
-  case 2:
-    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "--");
-    break;
-
-  case 3:
-    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "---");
-    break;
-
-  case 4:
-    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "----");
-    break;
-
-  case 5:
-    u8g2.drawUTF8(DisplayAnimationPrintWidthFixel, 47, "---->");
-    break;
-  }
   if (ActiveFeltier == HEATER_MODE)
     u8g2.drawUTF8(0, 63, "가열 중"); // 가열 중 출력
   // 2668 if 2615
-
   if (ActiveFeltier == COOLER_MODE)
     u8g2.drawUTF8(0, 63, "냉각 중"); // 냉각 중 출력
   // 2744 or 2746
 }
-
 void TMDisplayPrint() // 유지 모드 Display 관리 함수
 {
-  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
-  u8g2.drawUTF8(0, 30, "설정온도: ");
-  u8g2.setCursor(u8g2.getUTF8Width("설정온도: "), 30); // 설정 온도 출력
-  u8g2.print(userSetTemperature);                      // 설정 온도 출력
-  u8g2.drawUTF8(0, 50, "온도 유지 중");                // 설정 온도 출력
-  u8g2.setFont(u8g2_font_unifont_h_symbols);           // 폰트 설정
+  const char* TManimationCharacter[5] = {
+    "",
+    ".",
+    "..",
+    "..."
+
+  };
+
+  u8g2.setCursor(returnTextWidthPixel("설정온도: "), 30); // 설정 온도 출력
+
+  u8g2.setFont(u8g2_font_unifont_h_symbols);// 폰트 설정
+  u8g2.print(userSetTemperature);            
   u8g2.print("℃");
-  u8g2.setFont(u8g2_font_unifont_t_korean2);
+
+  u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
+  u8g2.drawUTF8(0, 30, "설정온도: ");                     // 설정 온도 출력
+  u8g2.drawUTF8(0, 50, "온도 유지 중");                // 설정 온도 출력
+  u8g2.drawUTF8(returnTextWidthPixel("온도 유지 중"), 50, TManimationCharacter[(millis() / 1000) % 4]);
 }
 
-void settingTemperatureDisplayPrint() // 온도 설정 Display 관리 함수
-{
+void settingTemperatureDisplayPrint()                                                                                                               // 온도 설정 Display 관리 함수
+{                                                                                                                                                   // 온도 설정 : 전원 버튼 출력
+  u8g2.setFont(u8g2_font_unifont_h_symbols);                                                                                                        // 폰트 설정
+  u8g2.print("℃");                                                                                                                                  // 설정 온도 출력
+  u8g2.drawUTF8(returnTextWidthPixel("증가:AAA감소:AAA", WIDTH_CENTER) + u8g2.getUTF8Width("증가:"), 38, "▲");                                      // 설정 온도 출력
+  u8g2.drawUTF8(returnTextWidthPixel("증가:AAA감소:AAA", WIDTH_CENTER) + u8g2.getUTF8Width("증가:▼▼▼") + u8g2.getUTF8Width("감소:") + 30, 38, "▼"); // 설정 온도 출력
+
+  u8g2.setFont(u8g2_font_unifont_t_korean2);
   u8g2.setCursor(0, 0);               // 커서 위치 설정
   u8g2.drawUTF8(0, 16, "설정온도: "); // 설정 온도 출력
   u8g2.setCursor(u8g2.getUTF8Width("설정온도: "), 16);
-  u8g2.print(userSetTemperature);                                                                                                                                   // 설정 온도 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("증가:AAA감소:AAA")) / 2, 38, "증가:   감소:");                                                         // 온도 설정 : 전원 버튼 출력
-  u8g2.drawUTF8(0, 60, "완료: 전원버튼");                                                                                                                           // 온도 설정 : 전원 버튼 출력
-  u8g2.setFont(u8g2_font_unifont_h_symbols);                                                                                                                        // 폰트 설정
-  u8g2.print("℃");                                                                                                                                                  // 설정 온도 출력
-  u8g2.drawUTF8(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("증가:AAA감소:AAA")) / 2) + u8g2.getUTF8Width("증가:"), 38, "▲");                                      // 설정 온도 출력
-  u8g2.drawUTF8(((u8g2.getDisplayWidth() - u8g2.getUTF8Width("증가:AAA감소:▼▼▼")) / 2) + u8g2.getUTF8Width("증가:▼▼▼") + u8g2.getUTF8Width("감소:") + 30, 38, "▼"); // 설정 온도 출력
-  u8g2.setFont(u8g2_font_unifont_t_korean2);                                                                                                                        // 폰트 설정
+  u8g2.print(userSetTemperature);                                                             // 설정 온도 출력
+  u8g2.drawUTF8(returnTextWidthPixel("증가:AAA감소:AAA", WIDTH_CENTER), 38, "증가:   감소:"); // 온도 설정 : 전원 버튼 출력
+  u8g2.drawUTF8(0, 60, "완료: 전원버튼");                                                     // 폰트 설정
 }
 
 void endedSettingTemperatureDisplayPrint() // 온도 설정 Display 관리 함수
 {
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도조절을")) / 2, 16, "온도조절을");   // 온도 조절을 시작 합니다. 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("시작합니다!")) / 2, 32, "시작합니다!"); // 온도 조절을 시작 합니다. 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("화상에")) / 2, 48, "화상에");           // 화상에 주의해 주세요! 출력
-  u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("주의하세요!")) / 2, 64, "주의하세요!"); // 화상에 주의해 주세요! 출력
+  u8g2.drawUTF8(returnTextWidthPixel("온도조절을", WIDTH_CENTER), 16, "온도조절을");   // 온도 조절을 시작 합니다. 출력
+  u8g2.drawUTF8(returnTextWidthPixel("시작합니다!", WIDTH_CENTER), 32, "시작합니다!"); // 온도 조절을 시작 합니다. 출력
+  u8g2.drawUTF8(returnTextWidthPixel("화상에", WIDTH_CENTER), 48, "화상에");           // 화상에 주의해 주세요! 출력
+  u8g2.drawUTF8(returnTextWidthPixel("주의하세요!", WIDTH_CENTER), 64, "주의하세요!"); // 화상에 주의해 주세요! 출력
 }
 /*-----Main Display Print-----*/
 
@@ -380,8 +405,8 @@ void PushedButtonFunction()
     }
     if (millis() - reBootCheck >= 5000)
     {
-      checkToBootButtonTogle = false; // Boot 버튼을 5초 이상 누르면 checkToBootButtonTogle을 false로 설정
-      bootButton = false;         // bootButton을 false로 설정
+      checkToBootButtonTogle = false;                                    // Boot 버튼을 5초 이상 누르면 checkToBootButtonTogle을 false로 설정
+      bootButton = false;                                                // bootButton을 false로 설정
       esp_sleep_enable_timer_wakeup(5 * 1000000);                        // 5초 후 Deep Sleep 모드 해제 설정
       esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO); // RTC Peripherals 전원 차단
       esp_deep_sleep_start();                                            // Boot버튼을 5초 유지하면 ESP32-C3 Deep Sleep 모드로 전환
@@ -505,7 +530,7 @@ void PushButtonTempSetFunction()
       }
     }
     else if (upButtonHighRepeatToggle)
-      if (millis() - upButtonCheckTime >= 200 && userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
+      if (millis() - upButtonCheckTime >= 100 && userSetTemperature < SYSYEM_LIMIT_MAX_TEMPERATURE)
       {
         userSetTemperature++;
         upButtonCheckTime = millis();
@@ -546,7 +571,7 @@ void PushButtonTempSetFunction()
       }
     }
     else if (downButtonHighRepeatToggle)
-      if (millis() - downButtonCheckTime >= 200 && userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+      if (millis() - downButtonCheckTime >= 100 && userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
       {
         userSetTemperature--;
         downButtonCheckTime = millis();
@@ -566,13 +591,13 @@ void TriggerEnebleFunction()
 
   if (deviceMode == ACTIVE_MODE)
   {
-    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 조절을")) / 2, 30, "온도 조절을");
-    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료하시겠습니까?")) / 2, 46, "종료하시겠습니까?");
+    u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", WIDTH_CENTER), 30, "온도 조절을");
+    u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", WIDTH_CENTER), 46, "종료하시겠습니까?");
   }
   else if (deviceMode == TEMPERATURE_MAINTANENCE_MODE)
   {
-    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 유지를")) / 2, 30, "온도 유지를");
-    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료하시겠습니까?")) / 2, 46, "종료하시겠습니까?");
+    u8g2.drawUTF8(returnTextWidthPixel("온도 유지를", WIDTH_CENTER), 30, "온도 유지를");
+    u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", WIDTH_CENTER), 46, "종료하시겠습니까?");
   }
   ButtonTriggerEnableFunction();
   if (TM_count < 0)
@@ -604,13 +629,13 @@ void TriggerYNFunction()
     u8g2.clearBuffer();
     if (deviceMode == ACTIVE_MODE)
     {
-      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 조절을")) / 2, 30, "온도 조절을");
-      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료합니다.")) / 2, 46, "종료합니다.");
+      u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", WIDTH_CENTER), 30, "온도 조절을");
+      u8g2.drawUTF8(returnTextWidthPixel("종료합니다.", WIDTH_CENTER), 50, "종료합니다.");
     }
     else if (deviceMode == TEMPERATURE_MAINTANENCE_MODE)
     {
-      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 유지를")) / 2, 30, "온도 유지를");
-      u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("종료합니다.")) / 2, 46, "종료합니다.");
+      u8g2.drawUTF8(returnTextWidthPixel("온도 유지를", WIDTH_CENTER), 30, "온도 유지를");
+      u8g2.drawUTF8(returnTextWidthPixel("종료합니다.", WIDTH_CENTER), 50, "종료합니다.");
     }
     u8g2.sendBuffer();
     delay(2500);
@@ -697,7 +722,7 @@ void loop()
   if (temperatureC == DEVICE_DISCONNECTED_C)
   {
     u8g2.clearBuffer();
-    u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 센서 오류")) / 2, 30, "온도 센서 오류");
+    u8g2.drawUTF8(returnTextWidthPixel("온도 센서 오류", WIDTH_CENTER), 30, "온도 센서 오류");
     u8g2.sendBuffer();
     delay(1000);
   }
@@ -760,8 +785,8 @@ void loop()
         deviceMode = TEMPERATURE_MAINTANENCE_MODE;
         saveUserSetTemperature(userSetTemperature);
         u8g2.clearBuffer();
-        u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("온도 유지를")) / 2, 30, "온도 유지를");
-        u8g2.drawUTF8((u8g2.getDisplayWidth() - u8g2.getUTF8Width("시작합니다.")) / 2, 46, "시작합니다.");
+        u8g2.drawUTF8(returnTextWidthPixel("온도 유지를", WIDTH_CENTER), 30, "온도 유지를");
+        u8g2.drawUTF8(returnTextWidthPixel("시작합니다.", WIDTH_CENTER), 50, "시작합니다.");
         u8g2.sendBuffer();
         AM_count = 0;
         delay(2000);
