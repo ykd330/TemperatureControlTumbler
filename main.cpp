@@ -66,19 +66,6 @@ long BatteryPercentage = 0;                  // 배터리 량
 volatile bool BatteryChargeStatus = false;   // 배터리 충전 상태 변수
 volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
 
-/*-----GPIO 설정 부-----*/
-/*---ESP32-C3 SuperMini GPIO 핀 구성---*/
-// GPIO 5 : A5 : MISO /   5V   :    : VCC
-// GPIO 6 :    : MOSI /  GND   :    : GND
-// GPIO 7 :    : SS   /  3.3V  :    : VCC
-// GPIO 8 :    : SDA  / GPIO 4 : A4 : SCK
-// GPIO 9 :    : SCL  / GPIO 3 : A3 :
-// GPIO 10:    :      / GPIO 2 : A2 :
-// GPIO 20:    : RX   / GPIO 1 : A1 :
-// GPIO 21:    : TX   / GPIO 0 : A0 :
-// PWM, 통신 관련 핀은 임의로 설정 가능함
-// gpio 4, 5, 6, 7, 8, 9 사용 중
-
 /*-----열전소자 전류 제어용 PWM / 출력 PIN 설정부-----*/
 #define PWM_FREQ 5000    // PWM 주파수 설정 (5kHz)
 #define PWM_RESOLUTION 8 // PWM 해상도 설정 (8비트)
@@ -92,7 +79,7 @@ enum SystemLimitTemperature
   SYSTEM_LIMIT_MIN_TEMPERATURE = 5   // 시스템 한계 온도
 };
 
-/*-----Interrupt 버튼 triger 선언부-----*/
+/*-----Interrupt 버튼 Toggle / Toggle Check TIme / Trigger 변수 선언부-----*/
 volatile bool bootButton = false;
 volatile bool upButton = false;          // 설정온도 상승 버튼 상태 변수
 volatile bool downButton = false;        // 설정온도 하강 버튼 상태 변수
@@ -103,8 +90,10 @@ bool upButtonHighRepeatToggle = false;   // upButton Toggle 상태 변수
 bool downButtonLowRepeatToggle = false;  // downButton Toggle 상태 변수
 bool downButtonHighRepeatToggle = false; // downButton Toggle 상태 변수
 bool checkToBootButtonTogle = false;     // 부팅 버튼 토글 상태 변수
-int TM_count = 0;
-static unsigned long reBootCheck = 0;          // 버튼 트리거 시간 변수
+int YN_Check = 0;                        // 모드 종료 시 Y / N 선택용 변수                
+
+//Toggle 작동 시 시간 확인용 변수
+static unsigned long reBootCheckTime = 0;          // 버튼 트리거 시간 변수
 static unsigned long upButtonCheckTime = 0;    // upButton Trigger
 static unsigned long upButtonToggleTime = 0;   // upButton Trigger
 static unsigned long downButtonCheckTime = 0;  // downButton Trigger
@@ -116,24 +105,19 @@ volatile unsigned long lastDebounceTimeDown = 0;  // 마지막 디바운스 시�
 volatile unsigned long lastDebounceTimeBoot = 0;  // 마지막 디바운스 시간 BOOT
 volatile const unsigned long debounceDelay = 130; // 디바운싱 지연 시간 (밀리초) - 더블클릭 현상 방지
 
-/*-----Display 절전모드 제어용 변수-----*/
+/*-----Display함수용 변수-----*/
 unsigned long displaySleepTime = 0; // display 절전모드 시간 변수
-/*----------전역변수 / 클래스 선언부----------*/
-
-/*----------함수 선언부----------*/
-
-
-/*------------------------------Display Print------------------------------*/
-// 5. Battery관련 내용을 출력할 방식을 고안해야함.
-/*-----Starting Display Print-----*/
 enum checkreturnPixelMode
 {
   WIDTH_TEXT = 0,
   ALIGN_CENTER = 1,
   ALIGN_RIGHT = 2,
 };
+/*----------전역변수 / 클래스 선언부----------*/
 
-int returnTextWidthPixel(const char *Text, checkreturnPixelMode Mode = WIDTH_TEXT)
+
+/*------------------------------Display Print------------------------------*/
+int returnTextWidthPixel(const char *Text, checkreturnPixelMode Mode = WIDTH_TEXT) // 출력 Text width값 반환용 함수
 {
   switch (Mode)
   {
@@ -150,8 +134,8 @@ int returnTextWidthPixel(const char *Text, checkreturnPixelMode Mode = WIDTH_TEX
     return -1;
   }
 }
-
-void startingDisplayPrint()
+/*-----Starting Display Print-----*/
+void startingDisplayPrint() // 시작화면
 {
   u8g2.setFont(u8g2_font_ncenB08_tr);
   u8g2.drawUTF8(returnTextWidthPixel("Temperature", ALIGN_CENTER), 39, "Temperature");
@@ -162,7 +146,7 @@ void startingDisplayPrint()
 }
 
 /*-----Base DisplayPrint-----*/
-void baseDisplayPrint() // 기본 Display 내용 출력 함수
+void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선 / 배터리
 {
   u8g2.drawLine(0, 13, 127, 13);             // 가로선 그리기
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
@@ -207,9 +191,9 @@ void StanbyDisplayPrint()       // 대기 모드 Display 관리 함수
   u8g2.drawUTF8((returnTextWidthPixel("현재 온도", ALIGN_CENTER)), 30, "현재 온도"); // 현재 온도 출력
 }
 
-void ActiveDisplayPrint()
+void ActiveDisplayPrint() // Active모드 디스플레이
 {
-  const char *AnimationCharacter[8] = {
+  const char *AM_AnimationCharacter[8] = { //온도 조절 표시 Animation 출력용 변수
       " ",
       "-",
       "--",
@@ -230,12 +214,14 @@ void ActiveDisplayPrint()
   if (ActiveFeltier == HEATER_MODE)
     u8g2.drawGlyph(returnTextWidthPixel("냉각 중"), 63, 2744);
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 한글 폰트
-  u8g2.drawUTF8(0, 30, "온도 조절 중...");                  // 현재 온도 출력                                     // 설정 온도 출력
+  u8g2.drawUTF8(0, 30, "온도 조절 중...");                  // 현재 온도 출력         
+
   // 애니메이션 효과 - 1초마다 Display에 출력되는 글자 변경
   unsigned int DisplayAnimationPrintWidthFixel = u8g2.getUTF8Width("10℃") + 15; // 애니메이션 효과 시작 위치
   u8g2.setCursor(DisplayAnimationPrintWidthFixel, 47);
-  u8g2.print(AnimationCharacter[(millis() / 1000) % 7]);
+  u8g2.print(AM_AnimationCharacter[(millis() / 1000) % 7]);
 
+  //feltier작동모드 출력
   if (ActiveFeltier == HEATER_MODE)
     u8g2.drawUTF8(0, 63, "가열 중"); // 가열 중 출력
   // 2668 if 2615
@@ -245,7 +231,7 @@ void ActiveDisplayPrint()
 }
 void TMDisplayPrint() // 유지 모드 Display 관리 함수
 {
-  const char* TManimationCharacter[5] = {
+  const char* TMAM_animationCharacter[5] = {
     "",
     ".",
     "..",
@@ -262,7 +248,7 @@ void TMDisplayPrint() // 유지 모드 Display 관리 함수
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   u8g2.drawUTF8(0, 30, "설정온도: ");                     // 설정 온도 출력
   u8g2.drawUTF8(0, 50, "온도 유지 중");                // 설정 온도 출력
-  u8g2.drawUTF8(returnTextWidthPixel("온도 유지 중"), 50, TManimationCharacter[(millis() / 1000) % 4]);
+  u8g2.drawUTF8(returnTextWidthPixel("온도 유지 중"), 50, TMAM_animationCharacter[(millis() / 1000) % 4]);
 }
 
 void settingTemperatureDisplayPrint()                                                                                                               // 온도 설정 Display 관리 함수
@@ -399,11 +385,11 @@ void PushedButtonFunction()
     checkToBootButtonTogle = true; // Boot 버튼이 눌리면 checkToBootButtonTogle을 true로 설정
   if (checkToBootButtonTogle == true && digitalRead(BUTTON_BOOT) == HIGH) //boot 버튼 토글 시 로직 - Deep Sleep 모드를 활용한 재부팅
   {
-    if (reBootCheck == 0)
+    if (reBootCheckTime == 0)
     {
-      reBootCheck = millis();
+      reBootCheckTime = millis();
     }
-    if (millis() - reBootCheck >= 5000)
+    if (millis() - reBootCheckTime >= 5000)
     {
       checkToBootButtonTogle = false;                                    // Boot 버튼을 5초 이상 누르면 checkToBootButtonTogle을 false로 설정
       bootButton = false;                                                // bootButton을 false로 설정
@@ -411,12 +397,12 @@ void PushedButtonFunction()
       u8g2.setPowerSave(1);                                              // Display 절전 모드 진입
       esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO); // RTC Peripherals 전원 차단
       esp_deep_sleep_start();                                            // ESP32-C3 Deep Sleep 모드로 전환
-      reBootCheck = 0;
+      reBootCheckTime = 0;
     }
   }
   else if (digitalRead(BUTTON_BOOT) == LOW && checkToBootButtonTogle == true) //boot 버튼 작동 시 로직
   {
-    reBootCheck = 0; // Boot버튼을 떼면 reBootCheck 초기화
+    reBootCheckTime = 0; // Boot버튼을 떼면 reBootCheckTime 초기화
     if (bootButton == true && DisplaySleeping == false)
     {
       if ((deviceMode == TEMPERATURE_MAINTANENCE_MODE || deviceMode == TEMPERATURE_SETTING_MODE || deviceMode == ACTIVE_MODE) && Trigger == false)
@@ -490,12 +476,12 @@ void ButtonTriggerEnableFunction()
   {
     if (upButton == true)
     {
-      TM_count++;
+      YN_Check++;
       upButton = false;
     }
     if (downButton == true)
     {
-      TM_count--;
+      YN_Check--;
       downButton = false;
     }
   }
@@ -602,12 +588,12 @@ void TriggerEnebleFunction()
     u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", ALIGN_CENTER), 46, "종료하시겠습니까?");
   }
   ButtonTriggerEnableFunction();
-  if (TM_count < 0)
+  if (YN_Check < 0)
   {
-    // TM_count < 0 방지
-    TM_count = 1;
+    // YN_Check < 0 방지
+    YN_Check = 1;
   }
-  switch (TM_count % 2)
+  switch (YN_Check % 2)
   {
   case 0:
     u8g2.drawButtonUTF8(40, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
@@ -625,8 +611,8 @@ void TriggerEnebleFunction()
 
 void TriggerYNFunction()
 {
-  // Trigger_YN이 true일 때 TM_count를 증가 또는 감소시킴 -> Yes/No 선택
-  if ((TM_count % 2) == 0)
+  // Trigger_YN이 true일 때 YN_Check를 증가 또는 감소시킴 -> Yes/No 선택
+  if ((YN_Check % 2) == 0)
   {
     u8g2.clearBuffer();
     if (deviceMode == ACTIVE_MODE)
@@ -645,14 +631,14 @@ void TriggerYNFunction()
     Trigger = false;
     Trigger_YN = false;
     bootButton = false;
-    TM_count = 0;
+    YN_Check = 0;
   }
-  else if ((TM_count % 2) == 1)
+  else if ((YN_Check % 2) == 1)
   {
     Trigger = false;
     Trigger_YN = false;
     bootButton = false;
-    TM_count = 0;
+    YN_Check = 0;
   }
 }
 
