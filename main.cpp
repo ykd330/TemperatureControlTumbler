@@ -59,13 +59,15 @@ ControlMode ActiveFeltier = STOP_MODE; // 온도 설정 모드 초기화
 enum BatteryStatus
 {
   BATTERY_STATUS_FULL = 100, // 배터리 완충
-  BATTERY_STATUS_LOW = 20    // 배터리 부족
+  BATTERY_STATUS_LOW = 20,    // 배터리 부족
+  CHARGE = 0,
+  NONCHARGE = 1
 };
-#define BATTERY_HIGH_VOLTAGE 4.2             // 배터리 전압 (상)
-#define BATTERY_LOW_VOLTAGE 3.0              // 배터리 전압 (하)
+BatteryStatus BatteryChargeStatus = NONCHARGE;   // 배터리 충전 상태 변수
+const float BATTERY_HIGH_VOLTAGE = 4.2f;
+const float BATTERY_LOW_VOLTAGE = 3.0f;
+unsigned long BatteryPercentage = 50;  // 배터리 량
 volatile long BatteryVoltage = 0;            // 배터리 전압 저장 변수
-long BatteryPercentage = 0;                  // 배터리 량
-volatile bool BatteryChargeStatus = false;   // 배터리 충전 상태 변수
 volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
 
 /*-----열전소자 전류 제어용 PWM / 출력 PIN 설정부-----*/
@@ -86,7 +88,16 @@ enum SystemSettingTemperature
   MINPWM = 60
 };
 
-/*-----Interrupt 버튼 Toggle / Toggle Check TIme / Trigger 변수 선언부-----*/
+/*-----Display함수용 변수-----*/
+unsigned long displaySleepTime = 0; // display 절전모드 시간 변수
+enum checkreturnPixelMode
+{
+  WIDTH_TEXT = 0,
+  ALIGN_CENTER = 1,
+  ALIGN_RIGHT = 2,
+};
+
+/*-----Interrupt 버튼 Toggle / Toggle Check Time / Trigger 변수 선언부-----*/
 volatile bool bootButton = false;
 volatile bool upButton = false;          // 설정온도 상승 버튼 상태 변수
 volatile bool downButton = false;        // 설정온도 하강 버튼 상태 변수
@@ -110,16 +121,7 @@ static unsigned long downButtonToggleTime = 0; // downButton Trigger
 volatile unsigned long lastDebounceTimeUp = 0;    // 마지막 디바운스 시간 UP
 volatile unsigned long lastDebounceTimeDown = 0;  // 마지막 디바운스 시간 DOWN
 volatile unsigned long lastDebounceTimeBoot = 0;  // 마지막 디바운스 시간 BOOT
-volatile const unsigned long debounceDelay = 130; // 디바운싱 지연 시간 (밀리초) - 더블클릭 현상 방지
-
-/*-----Display함수용 변수-----*/
-unsigned long displaySleepTime = 0; // display 절전모드 시간 변수
-enum checkreturnPixelMode
-{
-  WIDTH_TEXT = 0,
-  ALIGN_CENTER = 1,
-  ALIGN_RIGHT = 2,
-};
+const unsigned long debounceDelay = 130; // 디바운싱 지연 시간 (밀리초) - 더블클릭 현상 방지
 /*----------전역변수 / 클래스 선언부----------*/
 
 
@@ -157,27 +159,33 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
 {
   u8g2.drawLine(0, 13, 127, 13);             // 가로선 그리기
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
-  if (BatteryChargeStatus == false)
+  /*Battery System Print*/
+  //배터리 시스템 미완으로 Test 불가능 - Display 작동 부분 정상 / 조건문에서 문제 발생
+  if (BatteryChargeStatus == NONCHARGE)
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
     {
       u8g2.setCursor(returnTextWidthPixel("100%", ALIGN_RIGHT), 12); // 배터리 상태 표시
+      u8g2.print(BatteryPercentage);
+      u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
+      u8g2.print("%");
+      u8g2.setFont(u8g2_font_unifont_t_korean2); // 배터리 상태 표시
     }
     else if (BatteryPercentage == BATTERY_STATUS_LOW)
     {
-      u8g2.setCursor((returnTextWidthPixel("100%", ALIGN_CENTER)), 12); // 배터리 상태 표시
+      u8g2.setCursor((returnTextWidthPixel("please charge battery", ALIGN_CENTER)), 12); // 배터리 상태 표시
       u8g2.print("please charge battery");                              // 배터리 상태 표시
     }
-    else
+    else if (BatteryPercentage < BATTERY_STATUS_FULL && BatteryPercentage > BATTERY_STATUS_LOW)
     {
-      u8g2.setCursor(returnTextWidthPixel("99%", ALIGN_RIGHT), 12); // 배터리 상태 표시
+      u8g2.setCursor(returnTextWidthPixel("99%", ALIGN_CENTER), 12); // 배터리 상태 표시
+      u8g2.print(BatteryPercentage);
+      u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
+      u8g2.print("%");
+      u8g2.setFont(u8g2_font_unifont_t_korean2); // 배터리 상태 표시
     }
-    u8g2.print(BatteryPercentage);
-    u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
-    u8g2.print("%");
-    u8g2.setFont(u8g2_font_unifont_t_korean2); // 배터리 상태 표시
   }
-  else
+  else if(BatteryChargeStatus == CHARGE)
   {
     u8g2.setFont(u8g2_font_unifont_h_symbols);
     u8g2.drawUTF8(returnTextWidthPixel("🗲", ALIGN_RIGHT), 12, "🗲"); // 충전 중 표시
@@ -651,12 +659,12 @@ void TriggerYNFunction()
   }
 }
 
-void FeltierControlFunction(unsigned int temp)
+void FeltierControlFunction(unsigned int CalibrateTemperatureValues)
 {
   // 펠티어소자 제어 함수
-  if (temperatureC + temp < userSetTemperature)
+  if (temperatureC + CalibrateTemperatureValues < userSetTemperature)
     changeControlMode(HEATER_MODE);
-  else if (temperatureC - temp > userSetTemperature)
+  else if (temperatureC - CalibrateTemperatureValues > userSetTemperature)
     changeControlMode(COOLER_MODE);
 }
 /*------------------------Button Logic------------------------*/
@@ -692,11 +700,12 @@ void setup()
   u8g2.setFontDirection(0);                  // 글자 방향 설정
 
   /*------Interrupt설정부------*/
+  //Button 작동 방식 - 3Pin / VCC / GND / OUT / 작동시 OUT 단자에서 High 신호 출력 
   attachInterrupt(BUTTON_UP, upButtonF, RISING);
   attachInterrupt(BUTTON_DOWN, downButtonF, RISING);
-  attachInterrupt(BUTTON_BOOT, bootButtonF, RISING); //
+  attachInterrupt(BUTTON_BOOT, bootButtonF, RISING); 
 
-  /*------FS 설정부------*/
+  /*------File System 설정부------*/
   LittleFS.begin(false);    // LittleFS 초기화
   loadUserSetTemperature(); // 설정 온도 불러오기
 
@@ -717,12 +726,11 @@ void loop()
   /*-----loop 지역 변수 선언부-----*/
   static unsigned long AM_count = 0;
   /*Sensors error*/
-  if (temperatureC == DEVICE_DISCONNECTED_C)
+  if (temperatureC == DEVICE_DISCONNECTED_C) //DEVICE_DISCONNECTED_C -127 오류 값 반환
   {
     u8g2.clearBuffer();
     u8g2.drawUTF8(returnTextWidthPixel("온도 센서 오류", ALIGN_CENTER), 30, "온도 센서 오류");
     u8g2.sendBuffer();
-    delay(1000);
   }
 
   /*-----온도 측정부-----*/
@@ -732,21 +740,25 @@ void loop()
     sensors.requestTemperatures();             // 다음 측정을 위해 온도 요청
   }
 
-  /*-----Battery 상태 관리 함수-----*/
+  /*Main System control and Display print*/
+
+   /*-----Battery 상태 관리 함수-----*/
   // 배터리 연결 후 마무리
   // 배터리 전압을 읽어 배터리 상태를 확인
   // 배터리 값은 1.5 ~ 2.1 V -> 3.0 ~ 4.2 V로 변환 -> 0 ~ 100%로 변환 (4.2V = 100%, 3.0V = 0%)
-  BatteryVoltage = analogRead(BATTERY_STATUS_FIN) * 2;                                        // 아날로그 핀 0에서 배터리 전압 읽기
+  BatteryVoltage = map(analogRead(BATTERY_STATUS_FIN), 0, 4095, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE); // 아날로그 핀 0에서 배터리 전압 읽기
+  // -> *5 - Hardware로 인한 변경 값 보정 - 전압 분배 회로를 이용해 적절한 전압 값 / 3.3V이내 / 으로 바꾸어 준 후 읽어옴
   BatteryPercentage = map(BatteryVoltage, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE, 0, 100); // 배터리 전압을 PWM 값으로 변환
-  if (analogRead(CHARGE_STATUS_FIN) >= 2)
+
+  if (analogRead(CHARGE_STATUS_FIN) >= 2) //충전상태 감지 - CHARGE_STATUS_FIN과 충전모듈 In 연결
   {
-    BatteryChargeStatus = true; // 충전 상태
+    BatteryChargeStatus = BatteryStatus::CHARGE; // 충전 상태
   }
   else
   {
-    BatteryChargeStatus = false; // 비충전 상태
+    BatteryChargeStatus = BatteryStatus::NONCHARGE; // 비충전 상태
   }
-
+  
   PushedButtonFunction(); // 버튼 입력 처리 함수
 
   /*-----Display Low-Energe Mode-----*/
@@ -760,7 +772,8 @@ void loop()
     DisplaySleeping = false;
     u8g2.setPowerSave(0); // 절전모드 해제
   }
-  /*Main System control and Display print*/
+
+  /*-----DisplayPrint and Button-----*/
   u8g2.clearBuffer();
   baseDisplayPrint();
   switch (deviceMode)
@@ -771,9 +784,8 @@ void loop()
     break;
 
   case ACTIVE_MODE:
-    baseDisplayPrint();
     ActiveDisplayPrint();
-    FeltierControlFunction(2);
+    FeltierControlFunction(2); //온도 값 보정치 2
     if (abs(userSetTemperature - temperatureC) < 1)
     {
       if (AM_count == 0)
@@ -831,9 +843,8 @@ void loop()
     }
     else
     {
-      baseDisplayPrint();
       TMDisplayPrint();
-      FeltierControlFunction(2);
+      FeltierControlFunction(2); //온도 값 보정치 2
     }
 
     if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM)
