@@ -17,13 +17,15 @@ enum GPIO_PIN
 {
   BATTERY_STATUS_FIN = 0, // 배터리 상태 핀
   CHARGE_STATUS_FIN = 1,  // 충전 상태 핀
-  COOLER_PIN = 2,         // 냉각 제어 핀
-  HEATER_PIN = 3,         // 가열 제어 핀
-  ONE_WIRE_BUS = 4,       // DS18B20 센서 핀
+  PWM_PIN = 2,         // 냉각 제어 핀
+  ONE_WIRE_BUS = 3,       // DS18B20 센서 핀
   BUTTON_BOOT = 5,        // 모드 변경 버튼
   BUTTON_UP = 6,          // 설정온도 상승 버튼
   BUTTON_DOWN = 7,        // 설정온도 하강 버튼
-  // GPIO 8 :    : SDA  / GPIO 9 :    : SCL
+  //SDA_I2C = 8,          - Hardware에서 설정된 I2C핀
+  //SCL_I2C = 9,          - Hardware에서 설정된 I2C핀
+  COOLER_PIN = 20,         // 냉각 제어 핀
+  HEATER_PIN = 21         // 가열 제어 핀
 };
 
 /*-----Temperature Sensor Setting-----*/
@@ -67,16 +69,21 @@ volatile bool BatteryChargeStatus = false;   // 배터리 충전 상태 변수
 volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
 
 /*-----열전소자 전류 제어용 PWM / 출력 PIN 설정부-----*/
-#define PWM_FREQ 5000    // PWM 주파수 설정 (5kHz)
-#define PWM_RESOLUTION 8 // PWM 해상도 설정 (8비트)
-#define PWM_CHANNEL 0    // PWM 채널 설정 (0번 채널 사용)
-unsigned int dutyCycle = 0; //
+enum UPSET_PWM {
+  PWM_FREQ = 5000,
+  PWM_RESOLUTION = 8,
+  PWM_CHANNEL = 0,
+};
+unsigned int dutyCycle = 0; //PWM 값 설정용 
 
 /*-----시스템 한계 온도 설정-----*/
-enum SystemLimitTemperature
+enum SystemSettingTemperature
 {
   SYSYEM_LIMIT_MAX_TEMPERATURE = 80, // 시스템 한계 온도
-  SYSTEM_LIMIT_MIN_TEMPERATURE = 5   // 시스템 한계 온도
+  SYSTEM_LIMIT_MIN_TEMPERATURE = 5,   // 시스템 한계 온도
+  MAXTEMPDIFF_PWM = 10,
+  MAXPWM = 255,
+  MINPWM = 60
 };
 
 /*-----Interrupt 버튼 Toggle / Toggle Check TIme / Trigger 변수 선언부-----*/
@@ -319,11 +326,13 @@ void changeControlMode(ControlMode control_device_mode) // 열전소자 제어 �
   {
     digitalWrite(HEATER_PIN, HIGH); // 가열 제어 핀 HIGH
     digitalWrite(COOLER_PIN, LOW);  // 냉각 제어 핀 LOW
+    ledcWrite(PWM_CHANNEL, dutyCycle); //냉각 PWM
   }
   else if (control_device_mode == COOLER_MODE)
   {
     digitalWrite(HEATER_PIN, LOW);  // 가열 제어 핀 LOW
     digitalWrite(COOLER_PIN, HIGH); // 냉각 제어 핀 HIGH
+    ledcWrite(PWM_CHANNEL, dutyCycle); //냉각 PWM
   }
   else if (control_device_mode == STOP_MODE)
   {
@@ -574,7 +583,7 @@ void PushButtonTempSetFunction()
 }
 
 // Trigger 활성화시 작동되는 함수
-void TriggerEnebleFunction()
+void TriggerEnableFunction()
 {
 
   if (deviceMode == ACTIVE_MODE)
@@ -696,7 +705,7 @@ void setup()
   pinMode(HEATER_PIN, OUTPUT);
 
   ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  ledcAttachPin(COOLER_PIN, PWM_CHANNEL);           // PWM 핀과 채널 연결
+  ledcAttachPin(PWM_PIN, PWM_CHANNEL);           // PWM 핀과 채널 연결
   ledcWrite(PWM_CHANNEL, 0);                        // 초기 PWM 값 설정
 }
 /*----------setup----------*/
@@ -741,7 +750,7 @@ void loop()
   PushedButtonFunction(); // 버튼 입력 처리 함수
 
   /*-----Display Low-Energe Mode-----*/
-  if (displaySleepTime + 300000 < millis()) // 10초 이상 버튼이 눌리지 않으면 절전모드로 전환
+  if (displaySleepTime + 300000 < millis()) // 5분 이상 버튼이 눌리지 않으면 절전모드로 전환
   {
     DisplaySleeping = true;
     u8g2.setPowerSave(1); // 절전모드 설정
@@ -765,7 +774,7 @@ void loop()
     baseDisplayPrint();
     ActiveDisplayPrint();
     FeltierControlFunction(2);
-    if (((temperatureC >= userSetTemperature) ? temperatureC - userSetTemperature : userSetTemperature - temperatureC) < 1)
+    if (abs(userSetTemperature - temperatureC) < 1)
     {
       if (AM_count == 0)
         AM_count = millis();
@@ -786,16 +795,21 @@ void loop()
     {
       AM_count = 0;
     }
-    dutyCycle = map(temperatureC, temperatureC, userSetTemperature, 0, 255);
+    
+    if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM) //PWM 설정
+      dutyCycle = MAXPWM;
+    else {
+      dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
+    }
+
     if (Trigger == false && DisplaySleeping == false)
     {
       PushButtonTempSetFunction();
     }
-
     if (Trigger == true)
     {
       u8g2.clearBuffer();
-      TriggerEnebleFunction(); // Trigger 활성화 - Display에 YES/NO 출력
+      TriggerEnableFunction(); // Trigger 활성화 - Display에 YES/NO 출력
       if (Trigger_YN == true)
       {
         TriggerYNFunction();
@@ -808,7 +822,7 @@ void loop()
     if (Trigger == true)
     {
       u8g2.clearBuffer();
-      TriggerEnebleFunction(); // Trigger 활성화 - Display에 YES/NO 출력
+      TriggerEnableFunction(); // Trigger 활성화 - Display에 YES/NO 출력
 
       if (Trigger_YN == true)
       {
@@ -821,7 +835,13 @@ void loop()
       TMDisplayPrint();
       FeltierControlFunction(2);
     }
-    dutyCycle = map(temperatureC, temperatureC, userSetTemperature, 0, 255);
+
+    if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM)
+      dutyCycle = MAXPWM;
+    else {
+      dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
+    }
+
     u8g2.sendBuffer();
     break;
 
