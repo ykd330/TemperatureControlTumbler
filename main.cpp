@@ -6,31 +6,36 @@
 #include <U8g2lib.h>
 #include <FS.h>
 #include <LittleFS.h>
+#include <SparkFun_MAX1704x_Fuel_Gauge_Arduino_Library.h>
 //--------------------------------------------------
 
 /*----------전역변수 / 클래스 선언부----------*/
-/*-----Display Setting-----*/
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); // I2C 핀 설정
-
 /*-----GPIO 설정부-----*/
 enum GPIO_PIN
 {
-  BATTERY_STATUS_FIN = 0, // 배터리 상태 핀
-  CHARGE_STATUS_FIN = 1,  // 충전 상태 핀
+  //
+  SDA_I2C_BATTERY = 0, // 배터리 상태 핀 -> SDA_I2C_BATTERY
+  SCL_I2C_BATTERY = 1,  // 충전 상태 핀 -> SCL_I2C_BATTERY
+  //-> wire1.begin()으로 모듈과 I2C 통신
   PWM_PIN = 2,         // 냉각 제어 핀
   ONE_WIRE_BUS = 3,       // DS18B20 센서 핀
   BUTTON_BOOT = 5,        // 모드 변경 버튼
   BUTTON_UP = 6,          // 설정온도 상승 버튼
   BUTTON_DOWN = 7,        // 설정온도 하강 버튼
-  //SDA_I2C = 8,          - Hardware에서 설정된 I2C핀
-  //SCL_I2C = 9,          - Hardware에서 설정된 I2C핀
+  //
+  SDA_I2C_DISPLAY = 8,    // Hardware에서 설정된 I2C핀
+  SCL_I2C_DISPLAY = 9,    // Hardware에서 설정된 I2C핀
+  //-> wire.begin()으로 display와 I2C통신
   COOLER_PIN = 20,         // 냉각 제어 핀
   HEATER_PIN = 21         // 가열 제어 핀
 };
 
-/*-----Temperature Sensor Setting-----*/
+/*-----Module Setting-----*/
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); //u8g2 객체 선언
+SFE_MAX1704X lipo; //MAX1704x객체 선언언
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
+/*-----Temperature Sensor Setting-----*/
 int temperatureC = 0;                 // 현재 온도 저장 변수
 int RTC_DATA_ATTR userSetTemperature; // 설정 온도 저장 변수
 
@@ -60,12 +65,14 @@ enum BatteryStatus
 {
   BATTERY_STATUS_FULL = 100, // 배터리 완충
   BATTERY_STATUS_LOW = 20,    // 배터리 부족
-  CHARGE = 0,
-  NONCHARGE = 1
+  BATTERY_CHARGE = 0,
+  BATTERY_DISCHARGE = 1,
+  VCELL_REG = 0x02,
+  SOC_REG = 0x04,
+  MODE_REG = 0x06,
+  CONFIG_REG = 0x0C,
 };
-BatteryStatus BatteryChargeStatus = NONCHARGE;   // 배터리 충전 상태 변수
-const float BATTERY_HIGH_VOLTAGE = 4.2f;
-const float BATTERY_LOW_VOLTAGE = 3.0f;
+BatteryStatus BatteryChargeStatus = BATTERY_DISCHARGE;   // 배터리 충전 상태 변수
 unsigned long BatteryPercentage = 50;  // 배터리 량
 volatile long BatteryVoltage = 0;            // 배터리 전압 저장 변수
 volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
@@ -161,7 +168,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   /*Battery System Print*/
   //배터리 시스템 미완으로 Test 불가능 - Display 작동 부분 정상 / 조건문에서 문제 발생
-  if (BatteryChargeStatus == NONCHARGE)
+  if (BatteryChargeStatus == DISCHARGE)
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
     {
@@ -673,14 +680,13 @@ void FeltierControlFunction(unsigned int CalibrateTemperatureValues)
 /*----------setup----------*/
 void setup()
 {
-  Wire.begin(); // I2C 초기화
+  Wire.begin(SDA_I2C_DISPLAY, SCL_I2C_DISPLAY); // I2C 초기화
+  Wire1.begin(SDA_I2C_BATTERY, SCL_I2C_BATTERY);
   /*------pinMode INPUT------*/
   pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
   pinMode(BUTTON_UP, INPUT_PULLDOWN);
   pinMode(BUTTON_DOWN, INPUT_PULLDOWN);
   pinMode(BUTTON_BOOT, INPUT_PULLDOWN);
-  pinMode(BATTERY_STATUS_FIN, INPUT);         // 배터리 상태 핀 설정
-  pinMode(CHARGE_STATUS_FIN, INPUT_PULLDOWN); // 충전 상태 핀 설정
 
   /*------pinMode OUTPUT------*/
   pinMode(HEATER_PIN, OUTPUT);
@@ -698,6 +704,12 @@ void setup()
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   u8g2.setDrawColor(1);                      // 글자 색상 설정
   u8g2.setFontDirection(0);                  // 글자 방향 설정
+
+  /*------Battery설정부------*/
+  lipo.begin();
+  lipo.quickStart();
+  lipo.wake();
+  BatteryPercentage = lipo.getSOC();
 
   /*------Interrupt설정부------*/
   //Button 작동 방식 - 3Pin / VCC / GND / OUT / 작동시 OUT 단자에서 High 신호 출력 
@@ -743,21 +755,18 @@ void loop()
   /*Main System control and Display print*/
 
    /*-----Battery 상태 관리 함수-----*/
-  // 배터리 연결 후 마무리
-  // 배터리 전압을 읽어 배터리 상태를 확인
-  // 배터리 값은 1.5 ~ 2.1 V -> 3.0 ~ 4.2 V로 변환 -> 0 ~ 100%로 변환 (4.2V = 100%, 3.0V = 0%)
-  BatteryVoltage = map(analogRead(BATTERY_STATUS_FIN), 0, 4095, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE); // 아날로그 핀 0에서 배터리 전압 읽기
-  // -> *5 - Hardware로 인한 변경 값 보정 - 전압 분배 회로를 이용해 적절한 전압 값 / 3.3V이내 / 으로 바꾸어 준 후 읽어옴
-  BatteryPercentage = map(BatteryVoltage, BATTERY_LOW_VOLTAGE, BATTERY_HIGH_VOLTAGE, 0, 100); // 배터리 전압을 PWM 값으로 변환
+  if(BatteryPercentage < lipo.getSOC()){
+   BatteryChargeStatus = BATTERY_CHARGE;
+  }
+  else if (BatteryPercentage > lipo.getSOC()){
+   BatteryChargeStatus = BATTERY_DISCHARGE;
+  }
 
-  if (analogRead(CHARGE_STATUS_FIN) >= 2) //충전상태 감지 - CHARGE_STATUS_FIN과 충전모듈 In 연결
-  {
-    BatteryChargeStatus = BatteryStatus::CHARGE; // 충전 상태
+  if(BatteryPercentage != lipo.getSOC()) {
+    BatteryPercentage = lipo.getSOC();
   }
-  else
-  {
-    BatteryChargeStatus = BatteryStatus::NONCHARGE; // 비충전 상태
-  }
+  
+  
   
   PushedButtonFunction(); // 버튼 입력 처리 함수
 
