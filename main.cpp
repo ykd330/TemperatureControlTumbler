@@ -14,8 +14,8 @@
 enum GPIO_PIN
 {
   //
-  SDA_I2C_BATTERY = 0, // 배터리 상태 핀 -> SDA_I2C_BATTERY
-  SCL_I2C_BATTERY = 1,  // 충전 상태 핀 -> SCL_I2C_BATTERY
+  SDA_I2C_BATTERY = 0, // 배터리 상태 핀 
+  SCL_I2C_BATTERY = 1,  // 충전 상태 핀 
   //-> wire1.begin()으로 모듈과 I2C 통신
   PWM_PIN = 2,         // 냉각 제어 핀
   ONE_WIRE_BUS = 3,       // DS18B20 센서 핀
@@ -168,7 +168,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   /*Battery System Print*/
   //배터리 시스템 미완으로 Test 불가능 - Display 작동 부분 정상 / 조건문에서 문제 발생
-  if (BatteryChargeStatus == DISCHARGE)
+  if (BatteryChargeStatus == BATTERY_DISCHARGE)
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
     {
@@ -192,7 +192,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
       u8g2.setFont(u8g2_font_unifont_t_korean2); // 배터리 상태 표시
     }
   }
-  else if(BatteryChargeStatus == CHARGE)
+  else if(BatteryChargeStatus == BATTERY_DISCHARGE)
   {
     u8g2.setFont(u8g2_font_unifont_h_symbols);
     u8g2.drawUTF8(returnTextWidthPixel("🗲", ALIGN_RIGHT), 12, "🗲"); // 충전 중 표시
@@ -707,7 +707,6 @@ void setup()
 
   /*------Battery설정부------*/
   lipo.begin();
-  lipo.quickStart();
   lipo.wake();
   BatteryPercentage = lipo.getSOC();
 
@@ -761,7 +760,6 @@ void loop()
   else if (BatteryPercentage > lipo.getSOC()){
    BatteryChargeStatus = BATTERY_DISCHARGE;
   }
-
   if(BatteryPercentage != lipo.getSOC()) {
     BatteryPercentage = lipo.getSOC();
   }
