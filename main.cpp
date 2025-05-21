@@ -13,26 +13,20 @@
 /*-----GPIO 설정부-----*/
 enum GPIO_PIN
 {
-  //
-  SDA_I2C_BATTERY = 0, // 배터리 상태 핀 
-  SCL_I2C_BATTERY = 1,  // 충전 상태 핀 
-  //-> wire1.begin()으로 모듈과 I2C 통신
   PWM_PIN = 2,         // 냉각 제어 핀
   ONE_WIRE_BUS = 3,       // DS18B20 센서 핀
   BUTTON_BOOT = 5,        // 모드 변경 버튼
   BUTTON_UP = 6,          // 설정온도 상승 버튼
   BUTTON_DOWN = 7,        // 설정온도 하강 버튼
-  //
-  SDA_I2C_DISPLAY = 8,    // Hardware에서 설정된 I2C핀
-  SCL_I2C_DISPLAY = 9,    // Hardware에서 설정된 I2C핀
-  //-> wire.begin()으로 display와 I2C통신
+  SDA_I2C = 8,    // Hardware에서 설정된 I2C핀
+  SCL_I2C = 9,    // Hardware에서 설정된 I2C핀
   COOLER_PIN = 20,         // 냉각 제어 핀
   HEATER_PIN = 21         // 가열 제어 핀
 };
 
 /*-----Module Setting-----*/
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); //u8g2 객체 선언
-SFE_MAX1704X lipo; //MAX1704x객체 선언언
+SFE_MAX1704X lipo; //MAX1704x객체 선언
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 /*-----Temperature Sensor Setting-----*/
@@ -680,8 +674,7 @@ void FeltierControlFunction(unsigned int CalibrateTemperatureValues)
 /*----------setup----------*/
 void setup()
 {
-  Wire.begin(SDA_I2C_DISPLAY, SCL_I2C_DISPLAY); // I2C 초기화
-  Wire1.begin(SDA_I2C_BATTERY, SCL_I2C_BATTERY);
+  Wire.begin(SDA_I2C,SCL_I2C); // I2C 초기화
   /*------pinMode INPUT------*/
   pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
   pinMode(BUTTON_UP, INPUT_PULLDOWN);
@@ -708,7 +701,6 @@ void setup()
   /*------Battery설정부------*/
   lipo.begin();
   lipo.wake();
-  BatteryPercentage = lipo.getSOC();
 
   /*------Interrupt설정부------*/
   //Button 작동 방식 - 3Pin / VCC / GND / OUT / 작동시 OUT 단자에서 High 신호 출력 
@@ -754,14 +746,15 @@ void loop()
   /*Main System control and Display print*/
 
    /*-----Battery 상태 관리 함수-----*/
-  if(BatteryPercentage < lipo.getSOC()){
+   unsigned int CheckBattery = lipo.getSOC();
+  if(BatteryPercentage < CheckBattery){
    BatteryChargeStatus = BATTERY_CHARGE;
   }
-  else if (BatteryPercentage > lipo.getSOC()){
+  else if (BatteryPercentage > CheckBattery){
    BatteryChargeStatus = BATTERY_DISCHARGE;
   }
-  if(BatteryPercentage != lipo.getSOC()) {
-    BatteryPercentage = lipo.getSOC();
+  if(BatteryPercentage != CheckBattery) {
+    BatteryPercentage = CheckBattery;
   }
   
   
