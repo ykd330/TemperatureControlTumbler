@@ -42,7 +42,9 @@ SCL_I2C = 9,            // Hardware에서 설정된 I2C핀
 COOLER_PIN = 20,        // 냉각 제어 핀
 HEATER_PIN = 21         // 가열 제어 핀
 
-구현 기능 :
+구현 기능 : 
+코드 흐름도 : [코드 흐름도.pdf](https://github.com/user-attachments/files/20408020/default.pdf)
+
 Device Mode :
 0. Boot Mode :
 MPU에 최초 전력 공급 시 자동으로 진입되는 모드
