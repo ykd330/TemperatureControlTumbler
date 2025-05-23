@@ -15,6 +15,7 @@ Module :
 1 x Boost Converter : LTC1871 (Boost 5V)
 1 x Feltier : TEC1-4903
 1 x Motor Drive : DRV8833 (2Channel 1.5A 5V)
+[HardWare System.pdf](https://github.com/user-attachments/files/20407849/HardWare.System.pdf)
 
 Development Environment :
 Dev tool : VSCode (Platform IO) + Arduino IDE(Test 및 Serial통신) <- VSCode에서 CDC boot 옵션 설정이 제공되지 않아 임의의 Serial통신이 불가능
