@@ -13,20 +13,21 @@
 /*-----GPIO 설정부-----*/
 enum GPIO_PIN
 {
-  PWM_PIN = 2,         // 냉각 제어 핀
-  ONE_WIRE_BUS = 3,       // DS18B20 센서 핀
-  BUTTON_BOOT = 5,        // 모드 변경 버튼
-  BUTTON_UP = 6,          // 설정온도 상승 버튼
-  BUTTON_DOWN = 7,        // 설정온도 하강 버튼
-  SDA_I2C = 8,    // Hardware에서 설정된 I2C핀
-  SCL_I2C = 9,    // Hardware에서 설정된 I2C핀
-  COOLER_PIN = 20,         // 냉각 제어 핀
-  HEATER_PIN = 21         // 가열 제어 핀
+  ULT_PIN = 1,      // 오류 핀
+  EEP_PIN = 2,      // 전류 제어 핀
+  ONE_WIRE_BUS = 3, // DS18B20 센서 핀
+  BUTTON_BOOT = 5,  // 모드 변경 버튼
+  BUTTON_UP = 6,    // 설정온도 상승 버튼
+  BUTTON_DOWN = 7,  // 설정온도 하강 버튼
+  SDA_I2C = 8,      // Hardware에서 설정된 I2C핀
+  SCL_I2C = 9,      // Hardware에서 설정된 I2C핀
+  COOLER_PIN = 20,  // 냉각 제어 핀
+  HEATER_PIN = 21   // 가열 제어 핀
 };
 
 /*-----Module Setting-----*/
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); //u8g2 객체 선언
-SFE_MAX1704X lipo; //MAX1704x객체 선언
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE); // u8g2 객체 선언
+SFE_MAX1704X lipo;                                                // MAX1704x객체 선언
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 /*-----Temperature Sensor Setting-----*/
@@ -41,24 +42,17 @@ enum SystemMode
   ACTIVE_MODE = 1,                  // 활성화 모드
   TEMPERATURE_MAINTANENCE_MODE = 2, // 유지 모드
   TEMPERATURE_SETTING_MODE = 3,
-  BOOTING_MODE = 10 // 부팅 모드
+  BOOTING_MODE = 10, // 부팅 모드
+  OVER_HEATING = 11
 };
 SystemMode deviceMode = BOOTING_MODE; // 초기 모드 설정
 volatile bool DisplaySleeping = false;
 
-/*---전류 방향 제어---*/
-enum ControlMode
-{
-  HEATER_MODE = 0, // 가열 모드
-  COOLER_MODE = 1, // 냉각 모드
-  STOP_MODE = 2    // 작동 정지
-};
-ControlMode ActiveFeltier = STOP_MODE; // 온도 설정 모드 초기화
 /*---배터리 관리 설정 부---*/
 enum BatteryStatus
 {
   BATTERY_STATUS_FULL = 100, // 배터리 완충
-  BATTERY_STATUS_LOW = 20,    // 배터리 부족
+  BATTERY_STATUS_LOW = 20,   // 배터리 부족
   BATTERY_CHARGE = 0,
   BATTERY_DISCHARGE = 1,
   VCELL_REG = 0x02,
@@ -66,24 +60,28 @@ enum BatteryStatus
   MODE_REG = 0x06,
   CONFIG_REG = 0x0C,
 };
-BatteryStatus BatteryChargeStatus = BATTERY_DISCHARGE;   // 배터리 충전 상태 변수
-unsigned long BatteryPercentage = 50;  // 배터리 량
-volatile long BatteryVoltage = 0;            // 배터리 전압 저장 변수
-volatile unsigned long BatteryCheckTime = 0; // 배터리 체크 시간 변수
+BatteryStatus BatteryChargeStatus = BATTERY_DISCHARGE; // 배터리 충전 상태 변수
+unsigned long BatteryPercentage = 50;                  // 배터리 량
 
-/*-----열전소자 전류 제어용 PWM / 출력 PIN 설정부-----*/
-enum UPSET_PWM {
+/*-----열전소자 제어 및 PWM 설정부-----*/
+enum FeltierControlPWM
+{
   PWM_FREQ = 5000,
   PWM_RESOLUTION = 8,
-  PWM_CHANNEL = 0,
+  PWM_COOLING_CHANNEL = 0,
+  PWM_HEATING_CHANNEL = 1,
+  FELTIER_STANBY = 0b00,
+  FELTIER_HEATING = 0b01,
+  FELTIER_COOLING = 0b10,
 };
-unsigned int dutyCycle = 0; //PWM 값 설정용 
+unsigned int dutyCycle = 0; // PWM 값 설정용
+FeltierControlPWM ActiveFeltier = FELTIER_STANBY;
 
 /*-----시스템 한계 온도 설정-----*/
 enum SystemSettingTemperature
 {
   SYSYEM_LIMIT_MAX_TEMPERATURE = 80, // 시스템 한계 온도
-  SYSTEM_LIMIT_MIN_TEMPERATURE = 5,   // 시스템 한계 온도
+  SYSTEM_LIMIT_MIN_TEMPERATURE = 5,  // 시스템 한계 온도
   MAXTEMPDIFF_PWM = 10,
   MAXPWM = 255,
   MINPWM = 60
@@ -109,22 +107,21 @@ bool upButtonHighRepeatToggle = false;   // upButton Toggle 상태 변수
 bool downButtonLowRepeatToggle = false;  // downButton Toggle 상태 변수
 bool downButtonHighRepeatToggle = false; // downButton Toggle 상태 변수
 bool checkToBootButtonTogle = false;     // 부팅 버튼 토글 상태 변수
-int YN_Check = 0;                        // 모드 종료 시 Y / N 선택용 변수                
+int YN_Check = 0;                        // 모드 종료 시 Y / N 선택용 변수
 
-//Toggle 작동 시 시간 확인용 변수
-static unsigned long reBootCheckTime = 0;          // 버튼 트리거 시간 변수
+// Toggle 작동 시 시간 확인용 변수
+static unsigned long reBootCheckTime = 0;      // 버튼 트리거 시간 변수
 static unsigned long upButtonCheckTime = 0;    // upButton Trigger
 static unsigned long upButtonToggleTime = 0;   // upButton Trigger
 static unsigned long downButtonCheckTime = 0;  // downButton Trigger
 static unsigned long downButtonToggleTime = 0; // downButton Trigger
 
 /*-----바운싱으로 인한 입력 값 오류 제거용-----*/
-volatile unsigned long lastDebounceTimeUp = 0;    // 마지막 디바운스 시간 UP
-volatile unsigned long lastDebounceTimeDown = 0;  // 마지막 디바운스 시간 DOWN
-volatile unsigned long lastDebounceTimeBoot = 0;  // 마지막 디바운스 시간 BOOT
-const unsigned long debounceDelay = 130; // 디바운싱 지연 시간 (밀리초) - 더블클릭 현상 방지
+volatile unsigned long lastDebounceTimeUp = 0;   // 마지막 디바운스 시간 UP
+volatile unsigned long lastDebounceTimeDown = 0; // 마지막 디바운스 시간 DOWN
+volatile unsigned long lastDebounceTimeBoot = 0; // 마지막 디바운스 시간 BOOT
+const unsigned long debounceDelay = 130;         // 디바운싱 지연 시간 (밀리초) - 더블클릭 현상 방지
 /*----------전역변수 / 클래스 선언부----------*/
-
 
 /*------------------------------Display Print------------------------------*/
 int returnTextWidthPixel(const char *Text, checkreturnPixelMode Mode = WIDTH_TEXT) // 출력 Text width값 반환용 함수
@@ -161,7 +158,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
   u8g2.drawLine(0, 13, 127, 13);             // 가로선 그리기
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   /*Battery System Print*/
-  //배터리 시스템 미완으로 Test 불가능 - Display 작동 부분 정상 / 조건문에서 문제 발생
+  // 배터리 시스템 미완으로 Test 불가능 - Display 작동 부분 정상 / 조건문에서 문제 발생
   if (BatteryChargeStatus == BATTERY_DISCHARGE)
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
@@ -175,7 +172,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
     else if (BatteryPercentage == BATTERY_STATUS_LOW)
     {
       u8g2.setCursor((returnTextWidthPixel("please charge battery", ALIGN_CENTER)), 12); // 배터리 상태 표시
-      u8g2.print("please charge battery");                              // 배터리 상태 표시
+      u8g2.print("please charge battery");                                               // 배터리 상태 표시
     }
     else if (BatteryPercentage < BATTERY_STATUS_FULL && BatteryPercentage > BATTERY_STATUS_LOW)
     {
@@ -186,7 +183,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
       u8g2.setFont(u8g2_font_unifont_t_korean2); // 배터리 상태 표시
     }
   }
-  else if(BatteryChargeStatus == BATTERY_DISCHARGE)
+  else if (BatteryChargeStatus == BATTERY_DISCHARGE)
   {
     u8g2.setFont(u8g2_font_unifont_h_symbols);
     u8g2.drawUTF8(returnTextWidthPixel("🗲", ALIGN_RIGHT), 12, "🗲"); // 충전 중 표시
@@ -198,9 +195,9 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
 volatile unsigned int AaCo = 0; // 대기 중 카운트 변수
 void StanbyDisplayPrint()       // 대기 모드 Display 관리 함수
 {
-  u8g2.setFont(u8g2_font_unifont_h_symbols);                                         // 폰트 설정
-  u8g2.setCursor((returnTextWidthPixel("10℃", ALIGN_CENTER)), 50);                   // 현재 온도 출력
-  u8g2.print(int(temperatureC));                                                     // 현재 온도 출력
+  u8g2.setFont(u8g2_font_unifont_h_symbols);                       // 폰트 설정
+  u8g2.setCursor((returnTextWidthPixel("10℃", ALIGN_CENTER)), 50); // 현재 온도 출력
+  u8g2.print(int(temperatureC));                                   // 현재 온도 출력
   u8g2.print("℃");
 
   u8g2.setFont(u8g2_font_unifont_t_korean2);                                         // 폰트 설정
@@ -209,7 +206,8 @@ void StanbyDisplayPrint()       // 대기 모드 Display 관리 함수
 
 void ActiveDisplayPrint() // Active모드 디스플레이
 {
-  const char *AM_AnimationCharacter[8] = { //온도 조절 표시 Animation 출력용 변수
+  const char *AM_AnimationCharacter[8] = {
+      // 온도 조절 표시 Animation 출력용 변수
       " ",
       "-",
       "--",
@@ -218,52 +216,52 @@ void ActiveDisplayPrint() // Active모드 디스플레이
       "-----",
       "----->",
   };
-  u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정   
+  u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
   u8g2.setCursor(2, 47);
-  u8g2.print(temperatureC);          
+  u8g2.print(temperatureC);
   u8g2.print("℃");                                        // 현재 온도 출력
   u8g2.setCursor(u8g2.getUTF8Width(" 10℃  ---->  "), 47); // 현재 온도 출력
   u8g2.print(userSetTemperature);                         // 설정 온도 출력
   u8g2.print("℃");
-  if (ActiveFeltier == COOLER_MODE)
+  if (ActiveFeltier == FELTIER_COOLING)
     u8g2.drawGlyph(returnTextWidthPixel("가열 중"), 63, 2668);
-  if (ActiveFeltier == HEATER_MODE)
+  if (ActiveFeltier == FELTIER_HEATING)
     u8g2.drawGlyph(returnTextWidthPixel("냉각 중"), 63, 2744);
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 한글 폰트
-  u8g2.drawUTF8(0, 30, "온도 조절 중...");                  // 현재 온도 출력         
+  u8g2.drawUTF8(0, 30, "온도 조절 중...");   // 현재 온도 출력
 
   // 애니메이션 효과 - 1초마다 Display에 출력되는 글자 변경
   unsigned int DisplayAnimationPrintWidthFixel = u8g2.getUTF8Width("10℃") + 15; // 애니메이션 효과 시작 위치
   u8g2.setCursor(DisplayAnimationPrintWidthFixel, 47);
   u8g2.print(AM_AnimationCharacter[(millis() / 1000) % 7]);
 
-  //feltier작동모드 출력
-  if (ActiveFeltier == HEATER_MODE)
+  // feltier작동모드 출력
+  if (ActiveFeltier == FELTIER_HEATING)
     u8g2.drawUTF8(0, 63, "가열 중"); // 가열 중 출력
   // 2668 if 2615
-  if (ActiveFeltier == COOLER_MODE)
+  if (ActiveFeltier == FELTIER_COOLING)
     u8g2.drawUTF8(0, 63, "냉각 중"); // 냉각 중 출력
   // 2744 or 2746
 }
 void TMDisplayPrint() // 유지 모드 Display 관리 함수
 {
-  const char* TMAM_animationCharacter[5] = {
-    "",
-    ".",
-    "..",
-    "..."
+  const char *TMAM_animationCharacter[5] = {
+      "",
+      ".",
+      "..",
+      "..."
 
   };
 
   u8g2.setCursor(returnTextWidthPixel("설정온도: "), 30); // 설정 온도 출력
 
-  u8g2.setFont(u8g2_font_unifont_h_symbols);// 폰트 설정
-  u8g2.print(userSetTemperature);            
+  u8g2.setFont(u8g2_font_unifont_h_symbols); // 폰트 설정
+  u8g2.print(userSetTemperature);
   u8g2.print("℃");
 
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
-  u8g2.drawUTF8(0, 30, "설정온도: ");                     // 설정 온도 출력
-  u8g2.drawUTF8(0, 50, "온도 유지 중");                // 설정 온도 출력
+  u8g2.drawUTF8(0, 30, "설정온도: ");        // 설정 온도 출력
+  u8g2.drawUTF8(0, 50, "온도 유지 중");      // 설정 온도 출력
   u8g2.drawUTF8(returnTextWidthPixel("온도 유지 중"), 50, TMAM_animationCharacter[(millis() / 1000) % 4]);
 }
 
@@ -291,7 +289,6 @@ void endedSettingTemperatureDisplayPrint() // 온도 설정 Display 관리 함�
   u8g2.drawUTF8(returnTextWidthPixel("주의하세요!", ALIGN_CENTER), 64, "주의하세요!"); // 화상에 주의해 주세요! 출력
 }
 /*-----------------------------Main Display Print-----------------------------*/
-
 
 /*------------------------Interrupt 함수 정의 부분------------------------------*/
 void IRAM_ATTR downButtonF() // Down Button Interrupt Service Routine
@@ -324,33 +321,13 @@ void IRAM_ATTR bootButtonF() // Boot Button Interrupt Service Routine
     bootButton = true;
   }
 }
+void IRAM_ATTR DRV8866_error()
+{
+  deviceMode = OVER_HEATING;
+}
 /*------------------------Interrupt 함수 정의 부분------------------------------*/
 
 /*------------------------사용자 함수 정의 부분------------------------*/
-
-/*------시스템 내부 feltier 제어 결정 함수------*/
-void changeControlMode(ControlMode control_device_mode) // 열전소자 제어 함수
-{
-  if (control_device_mode == HEATER_MODE)
-  {
-    digitalWrite(HEATER_PIN, HIGH); // 가열 제어 핀 HIGH
-    digitalWrite(COOLER_PIN, LOW);  // 냉각 제어 핀 LOW
-    ledcWrite(PWM_CHANNEL, dutyCycle); //냉각 PWM
-  }
-  else if (control_device_mode == COOLER_MODE)
-  {
-    digitalWrite(HEATER_PIN, LOW);  // 가열 제어 핀 LOW
-    digitalWrite(COOLER_PIN, HIGH); // 냉각 제어 핀 HIGH
-    ledcWrite(PWM_CHANNEL, dutyCycle); //냉각 PWM
-  }
-  else if (control_device_mode == STOP_MODE)
-  {
-    digitalWrite(HEATER_PIN, LOW); // 가열 제어 핀 LOW
-    digitalWrite(COOLER_PIN, LOW); // 냉각 제어 핀 LOW
-    ledcWrite(PWM_CHANNEL, 0);     // 초기 PWM 값 설정
-  }
-  ActiveFeltier = control_device_mode; // 현재 모드 저장
-}
 
 /*-----사용자 설정 온도 파일 저장-----*/
 void saveUserSetTemperature(int tempToSave)
@@ -395,13 +372,13 @@ void loadUserSetTemperature()
 }
 /*------------------------사용자 함수 정의 부분------------------------*/
 
-/*------------------------Button Logic------------------------*/
+/*------------------------Button Logic Functions------------------------*/
 void PushedButtonFunction()
 {
   // Boot 버튼을 5초 이상 누르면 Deep Sleep 모드로 전환 -> 오류 발생시 Deep Sleep 모드로 전환 후 재부팅
   if (bootButton == true)
-    checkToBootButtonTogle = true; // Boot 버튼이 눌리면 checkToBootButtonTogle을 true로 설정
-  if (checkToBootButtonTogle == true && digitalRead(BUTTON_BOOT) == HIGH) //boot 버튼 토글 시 로직 - Deep Sleep 모드를 활용한 재부팅
+    checkToBootButtonTogle = true;                                        // Boot 버튼이 눌리면 checkToBootButtonTogle을 true로 설정
+  if (checkToBootButtonTogle == true && digitalRead(BUTTON_BOOT) == HIGH) // boot 버튼 토글 시 로직 - Deep Sleep 모드를 활용한 재부팅
   {
     if (reBootCheckTime == 0)
     {
@@ -418,7 +395,7 @@ void PushedButtonFunction()
       reBootCheckTime = 0;
     }
   }
-  else if (digitalRead(BUTTON_BOOT) == LOW && checkToBootButtonTogle == true) //boot 버튼 작동 시 로직
+  else if (digitalRead(BUTTON_BOOT) == LOW && checkToBootButtonTogle == true) // boot 버튼 작동 시 로직
   {
     reBootCheckTime = 0; // Boot버튼을 떼면 reBootCheckTime 초기화
     if (bootButton == true && DisplaySleeping == false)
@@ -466,7 +443,7 @@ void PushedButtonFunction()
   }
 }
 
-//Trigger변수 true일 경우 Button 동작 로직
+// Trigger변수 true일 경우 Button 동작 로직
 void ButtonTriggerEnableFunction()
 {
   if (deviceMode == TEMPERATURE_SETTING_MODE)
@@ -660,26 +637,48 @@ void TriggerYNFunction()
   }
 }
 
-void FeltierControlFunction(unsigned int CalibrateTemperatureValues)
-{
-  // 펠티어소자 제어 함수
-  if (temperatureC + CalibrateTemperatureValues < userSetTemperature)
-    changeControlMode(HEATER_MODE);
-  else if (temperatureC - CalibrateTemperatureValues > userSetTemperature)
-    changeControlMode(COOLER_MODE);
-}
-/*------------------------Button Logic------------------------*/
+/*------------------------Button Logic Functions------------------------*/
 
+/*------------------------DRV8833 Control Functions------------------------*/
+void SetupPWM(unsigned int Pin, unsigned int Channel, unsigned int Frequency, unsigned int Resolution)
+{
+  pinMode(Pin, OUTPUT); // PWM 핀 설정
+  ledcSetup(Channel, Frequency, Resolution);
+  ledcAttachPin(Pin, Channel);
+}
+
+void SetControlFeltier(unsigned int DutyCycle = 0, FeltierControlPWM Mode = FELTIER_STANBY)
+{
+  switch (Mode)
+  {
+  case FELTIER_STANBY:
+    ledcWrite(PWM_HEATING_CHANNEL, 0);
+    ledcWrite(PWM_COOLING_CHANNEL, 0);
+    break;
+
+  case FELTIER_HEATING:
+    ledcWrite(PWM_HEATING_CHANNEL, DutyCycle);
+    ledcWrite(PWM_COOLING_CHANNEL, 0);
+    break;
+
+  case FELTIER_COOLING:
+    ledcWrite(PWM_HEATING_CHANNEL, 0);
+    ledcWrite(PWM_COOLING_CHANNEL, DutyCycle);
+    break;
+  }
+}
 
 /*----------setup----------*/
 void setup()
 {
-  Wire.begin(SDA_I2C,SCL_I2C); // I2C 초기화
+  Wire.begin(SDA_I2C, SCL_I2C); // I2C 초기화
   /*------pinMode INPUT------*/
   pinMode(ONE_WIRE_BUS, INPUT_PULLUP);
   pinMode(BUTTON_UP, INPUT_PULLDOWN);
   pinMode(BUTTON_DOWN, INPUT_PULLDOWN);
   pinMode(BUTTON_BOOT, INPUT_PULLDOWN);
+  pinMode(EEP_PIN, INPUT_PULLUP);
+  pinMode(ULT_PIN, INPUT_PULLUP);
 
   /*------pinMode OUTPUT------*/
   pinMode(HEATER_PIN, OUTPUT);
@@ -703,22 +702,19 @@ void setup()
   lipo.wake();
 
   /*------Interrupt설정부------*/
-  //Button 작동 방식 - 3Pin / VCC / GND / OUT / 작동시 OUT 단자에서 High 신호 출력 
+  // Button 작동 방식 - 3Pin / VCC / GND / OUT / 작동시 OUT 단자에서 High 신호 출력
   attachInterrupt(BUTTON_UP, upButtonF, RISING);
   attachInterrupt(BUTTON_DOWN, downButtonF, RISING);
-  attachInterrupt(BUTTON_BOOT, bootButtonF, RISING); 
+  attachInterrupt(BUTTON_BOOT, bootButtonF, RISING);
+  attachInterrupt(ULT_PIN, DRV8866_error, FALLING);
 
   /*------File System 설정부------*/
   LittleFS.begin(false);    // LittleFS 초기화
   loadUserSetTemperature(); // 설정 온도 불러오기
 
   /*------PWM설정부------*/
-  pinMode(COOLER_PIN, OUTPUT); // PWM 핀 설정
-  pinMode(HEATER_PIN, OUTPUT);
-
-  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  ledcAttachPin(PWM_PIN, PWM_CHANNEL);           // PWM 핀과 채널 연결
-  ledcWrite(PWM_CHANNEL, 0);                        // 초기 PWM 값 설정
+  SetupPWM(COOLER_PIN, PWM_COOLING_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  SetupPWM(HEATER_PIN, PWM_HEATING_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 }
 /*----------setup----------*/
 
@@ -729,7 +725,7 @@ void loop()
   /*-----loop 지역 변수 선언부-----*/
   static unsigned long AM_count = 0;
   /*Sensors error*/
-  if (temperatureC == DEVICE_DISCONNECTED_C) //DEVICE_DISCONNECTED_C -127 오류 값 반환
+  if (temperatureC == DEVICE_DISCONNECTED_C) // DEVICE_DISCONNECTED_C -127 오류 값 반환
   {
     u8g2.clearBuffer();
     u8g2.drawUTF8(returnTextWidthPixel("온도 센서 오류", ALIGN_CENTER), 30, "온도 센서 오류");
@@ -745,20 +741,21 @@ void loop()
 
   /*Main System control and Display print*/
 
-   /*-----Battery 상태 관리 함수-----*/
-   unsigned int CheckBattery = lipo.getSOC();
-  if(BatteryPercentage < CheckBattery){
-   BatteryChargeStatus = BATTERY_CHARGE;
+  /*-----Battery 상태 관리 함수-----*/
+  unsigned int CheckBattery = lipo.getSOC();
+  if (BatteryPercentage < CheckBattery)
+  {
+    BatteryChargeStatus = BATTERY_CHARGE;
   }
-  else if (BatteryPercentage > CheckBattery){
-   BatteryChargeStatus = BATTERY_DISCHARGE;
+  else if (BatteryPercentage > CheckBattery)
+  {
+    BatteryChargeStatus = BATTERY_DISCHARGE;
   }
-  if(BatteryPercentage != CheckBattery) {
+  if (BatteryPercentage != CheckBattery)
+  {
     BatteryPercentage = CheckBattery;
   }
-  
-  
-  
+
   PushedButtonFunction(); // 버튼 입력 처리 함수
 
   /*-----Display Low-Energe Mode-----*/
@@ -785,7 +782,6 @@ void loop()
 
   case ACTIVE_MODE:
     ActiveDisplayPrint();
-    FeltierControlFunction(2); //온도 값 보정치 2
     if (abs(userSetTemperature - temperatureC) < 1)
     {
       if (AM_count == 0)
@@ -806,14 +802,17 @@ void loop()
     else
     {
       AM_count = 0;
+      if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM) // PWM 설정
+        dutyCycle = MAXPWM;
+      else
+        dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
+
+      if (userSetTemperature - temperatureC > 2)
+        SetControlFeltier(dutyCycle, FELTIER_COOLING);
+      else if (userSetTemperature - temperatureC < -2)
+        SetControlFeltier(dutyCycle, FELTIER_HEATING);
     }
     
-    if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM) //PWM 설정
-      dutyCycle = MAXPWM;
-    else {
-      dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
-    }
-
     if (Trigger == false && DisplaySleeping == false)
     {
       PushButtonTempSetFunction();
@@ -844,14 +843,18 @@ void loop()
     else
     {
       TMDisplayPrint();
-      FeltierControlFunction(2); //온도 값 보정치 2
     }
 
     if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM)
       dutyCycle = MAXPWM;
-    else {
+    else
+    {
       dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
     }
+    if (userSetTemperature - temperatureC > 0)
+      SetControlFeltier(dutyCycle, FELTIER_COOLING);
+    else if (userSetTemperature - temperatureC < 0)
+      SetControlFeltier(dutyCycle, FELTIER_HEATING);
 
     u8g2.sendBuffer();
     break;
@@ -877,6 +880,15 @@ void loop()
     u8g2.sendBuffer();
     delay(3000);
     deviceMode = STANBY_MODE;
+    break;
+  
+  case OVER_HEATING:
+    u8g2.clearBuffer();
+    u8g2.drawUTF8(0, 40, "System Error");
+    SetControlFeltier(FELTIER_STANBY);
+    if (digitalRead(ULT_PIN))
+      deviceMode = STANBY_MODE;
+    u8g2.sendBuffer();
     break;
   }
 }
