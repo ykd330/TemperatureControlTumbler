@@ -677,12 +677,13 @@ void setup()
   pinMode(BUTTON_UP, INPUT_PULLDOWN);
   pinMode(BUTTON_DOWN, INPUT_PULLDOWN);
   pinMode(BUTTON_BOOT, INPUT_PULLDOWN);
-  pinMode(EEP_PIN, INPUT_PULLUP);
   pinMode(ULT_PIN, INPUT_PULLUP);
 
   /*------pinMode OUTPUT------*/
   pinMode(HEATER_PIN, OUTPUT);
   pinMode(COOLER_PIN, OUTPUT);
+  pinMode(EEP_PIN, OUTPUT);
+  digitalWrite(EEP_PIN, HIGH);
 
   /*------DS18B20설정부------*/
   sensors.begin();                     // DS18B20 센서 초기화
@@ -886,8 +887,10 @@ void loop()
     u8g2.clearBuffer();
     u8g2.drawUTF8(0, 40, "System Error");
     SetControlFeltier(FELTIER_STANBY);
+    digitalWrite(EEP_PIN, LOW);
     if (digitalRead(ULT_PIN))
       deviceMode = STANBY_MODE;
+      digitalWrite(EEP_PIN, HIGH);
     u8g2.sendBuffer();
     break;
   }
