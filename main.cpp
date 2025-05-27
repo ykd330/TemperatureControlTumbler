@@ -10,6 +10,7 @@
 //--------------------------------------------------
 
 /*----------전역변수 / 클래스 선언부----------*/
+//Device Status : 0b Error : 0 | Display Sleep : 0 | Feltier 00 | BootButton : 00 | DownButton / Upbutton 00 | Battery Charged State : 0 | Device mode : 000
 /*-----GPIO 설정부-----*/
 enum GPIO_PIN
 {
@@ -35,32 +36,42 @@ int temperatureC = 0;                 // 현재 온도 저장 변수
 int RTC_DATA_ATTR userSetTemperature; // 설정 온도 저장 변수
 
 /*-----시스템 관리 / 제어용-----*/
+unsigned int DeviceStatus = 0b000000000000; // 0b Error : 0 | Feltier 00 | Display Sleep : 0 | BootButton : 00 | DownButton / Upbutton 00 | Battery Charged State : 0 | Device mode : 000
+enum DeviceStatusbit
+{ // 0b00000 | Error : 0 | Display Sleep : 0 | Feltier 00 | BootButton : 00 | DownButton / Upbutton 00 | Battery Charged State : 0 | Device mode : 000
+  ERROR_YN = 11,          // 오류 발생 여부
+  DISPLAY_SLEEPING = 8, // Display 절전 모드 여부
+  FELTIER_MODE = 9,     // Feltier 작동 모드
+  BOOT_BUTTON = 6,      // Boot 버튼 상태
+  DOWN_BUTTON = 5,      // Down 버튼 상태
+  UP_BUTTON = 4,        // Up 버튼 상태
+  BATTERY_CHARGE_STATUS = 3, // 배터리 충전 상태
+};
 /*---시스템 모드---*/
 enum SystemMode
-{
+{ //0b00000 | Device Mode : 000
   STANBY_MODE = 0,                  // 대기 모드
   ACTIVE_MODE = 1,                  // 활성화 모드
   TEMPERATURE_MAINTANENCE_MODE = 2, // 유지 모드
   TEMPERATURE_SETTING_MODE = 3,
-  BOOTING_MODE = 10, // 부팅 모드
-  OVER_HEATING = 11
+  SETTING_CHECK_MODE = 4,
+  ENDED_MODE_CHECK = 5,
+  BOOTING_MODE = 6, // 부팅 모드
+  OVER_HEATING = 7,
 };
-SystemMode deviceMode = BOOTING_MODE; // 초기 모드 설정
-volatile bool DisplaySleeping = false;
 
 /*---배터리 관리 설정 부---*/
 enum BatteryStatus
-{
+{ // 0000| charged state : 0 | 000
   BATTERY_STATUS_FULL = 100, // 배터리 완충
   BATTERY_STATUS_LOW = 20,   // 배터리 부족
-  BATTERY_CHARGE = 0,
-  BATTERY_DISCHARGE = 1,
+  BATTERY_CHARGE = 0 << 4,
+  BATTERY_DISCHARGE = 1 << 4,
   VCELL_REG = 0x02,
   SOC_REG = 0x04,
   MODE_REG = 0x06,
   CONFIG_REG = 0x0C,
 };
-BatteryStatus BatteryChargeStatus = BATTERY_DISCHARGE; // 배터리 충전 상태 변수
 unsigned long BatteryPercentage = 50;                  // 배터리 량
 
 /*-----열전소자 제어 및 PWM 설정부-----*/
@@ -75,7 +86,6 @@ enum FeltierControlPWM
   FELTIER_COOLING = 0b10,
 };
 unsigned int dutyCycle = 0; // PWM 값 설정용
-FeltierControlPWM ActiveFeltier = FELTIER_STANBY;
 
 /*-----시스템 한계 온도 설정-----*/
 enum SystemSettingTemperature
@@ -97,11 +107,7 @@ enum checkreturnPixelMode
 };
 
 /*-----Interrupt 버튼 Toggle / Toggle Check Time / Trigger 변수 선언부-----*/
-volatile bool bootButton = false;
-volatile bool upButton = false;          // 설정온도 상승 버튼 상태 변수
-volatile bool downButton = false;        // 설정온도 하강 버튼 상태 변수
-bool Trigger = false;                    // 버튼 트리거 상태 변수
-bool Trigger_YN = false;                 // 버튼 트리거 상태 변수
+// 0b 000| Trigger_YN : 0 | Triger : 0 | DownButton | 0 | UpButton : 0 | bootButton 0 | 0000
 bool upButtonLowRepeatToggle = false;    // upButton Toggle 상태 변수
 bool upButtonHighRepeatToggle = false;   // upButton Toggle 상태 변수
 bool downButtonLowRepeatToggle = false;  // downButton Toggle 상태 변수
@@ -158,8 +164,7 @@ void baseDisplayPrint() // 기본 Display 내용 출력 함수 - 가로구분선
   u8g2.drawLine(0, 13, 127, 13);             // 가로선 그리기
   u8g2.setFont(u8g2_font_unifont_t_korean2); // 폰트 설정
   /*Battery System Print*/
-  // 배터리 시스템 미완으로 Test 불가능 - Display 작동 부분 정상 / 조건문에서 문제 발생
-  if (BatteryChargeStatus == BATTERY_DISCHARGE)
+  if (BatteryChargeStatus && BATTERY_DISCHARGE)
   {
     if (BatteryPercentage == BATTERY_STATUS_FULL)
     {
@@ -457,14 +462,12 @@ void ButtonTriggerEnableFunction()
     if (((temperatureC >= userSetTemperature) ? temperatureC - userSetTemperature : userSetTemperature - temperatureC) > 0.5)
     {
       deviceMode = ACTIVE_MODE;
-      Trigger = false;
-      bootButton = false;
+      DeviceStatus = DeviceStatus & ~(0b11 << BOOT_BUTTON); // Boot 버튼 상태 초기화
     }
     else if (((temperatureC >= userSetTemperature) ? temperatureC - userSetTemperature : userSetTemperature - temperatureC) <= 0.5)
     {
       deviceMode = TEMPERATURE_MAINTANENCE_MODE;
-      Trigger = false;
-      bootButton = false;
+      DeviceStatus = DeviceStatus & ~(0b11 << BOOT_BUTTON); // Boot 버튼 상태 초기화
     }
   }
   else
@@ -623,16 +626,12 @@ void TriggerYNFunction()
     u8g2.sendBuffer();
     delay(2500);
     deviceMode = STANBY_MODE;
-    Trigger = false;
-    Trigger_YN = false;
-    bootButton = false;
+    DeviceStatus = DeviceStatus & ~(0b11 << BOOT_BUTTON);
     YN_Check = 0;
   }
   else if ((YN_Check % 2) == 1)
   {
-    Trigger = false;
-    Trigger_YN = false;
-    bootButton = false;
+    DeviceStatus = DeviceStatus & ~(0b11 << BOOT_BUTTON);
     YN_Check = 0;
   }
 }
@@ -774,7 +773,7 @@ void loop()
   /*-----DisplayPrint and Button-----*/
   u8g2.clearBuffer();
   baseDisplayPrint();
-  switch (deviceMode)
+  switch (DeviceStatus && 0b111)
   {
   case STANBY_MODE:
     StanbyDisplayPrint();
@@ -814,15 +813,15 @@ void loop()
         SetControlFeltier(dutyCycle, FELTIER_HEATING);
     }
     
-    if (Trigger == false && DisplaySleeping == false)
+    if (DeviceStatus && (01 << (BOOT_BUTTON + 1)))
     {
       PushButtonTempSetFunction();
     }
-    if (Trigger == true)
+    if (DeviceStatus && (1 << (BOOT_BUTTON + 1)))
     {
       u8g2.clearBuffer();
       TriggerEnableFunction(); // Trigger 활성화 - Display에 YES/NO 출력
-      if (Trigger_YN == true)
+      if (DeviceStatus && (11 << BOOT_BUTTON))
       {
         TriggerYNFunction();
       }
@@ -831,12 +830,12 @@ void loop()
     break;
 
   case TEMPERATURE_MAINTANENCE_MODE:
-    if (Trigger == true)
+    if (DeviceStatus && (1 << (BOOT_BUTTON + 1)))
     {
       u8g2.clearBuffer();
       TriggerEnableFunction(); // Trigger 활성화 - Display에 YES/NO 출력
 
-      if (Trigger_YN == true)
+      if (DeviceStatus && 11 << BOOT_BUTTON) // Trigger_YN이 true일 때 YN_Check를 증가 또는 감소시킴 -> Yes/No 선택
       {
         TriggerYNFunction();
       }
@@ -861,14 +860,14 @@ void loop()
     break;
 
   case TEMPERATURE_SETTING_MODE:
-    if (Trigger == true)
+    if (DeviceStatus && (1 << (BOOT_BUTTON + 1)))
     {
       ButtonTriggerEnableFunction();
       break;
     }
     u8g2.clearBuffer();
     settingTemperatureDisplayPrint();
-    if (Trigger == false && DisplaySleeping == false)
+    if (DeviceStatus && (00 << BOOT_BUTTON + 1))
     {
       PushButtonTempSetFunction();
     }
@@ -880,17 +879,13 @@ void loop()
     startingDisplayPrint();
     u8g2.sendBuffer();
     delay(3000);
-    deviceMode = STANBY_MODE;
+    DeviceStatus = (DeviceStatus & ~0b111) | STANBY_MODE; // 부팅 모드 종료 후 대기 모드로 전환
     break;
   
   case OVER_HEATING:
     u8g2.clearBuffer();
     u8g2.drawUTF8(0, 40, "System Error");
-    SetControlFeltier(FELTIER_STANBY);
-    digitalWrite(EEP_PIN, LOW);
-    if (digitalRead(ULT_PIN))
-      deviceMode = STANBY_MODE;
-      digitalWrite(EEP_PIN, HIGH);
+    
     u8g2.sendBuffer();
     break;
   }
