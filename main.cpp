@@ -460,7 +460,6 @@ void ButtonActiveFunction()
           u8g2.clearBuffer();
           u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", ALIGN_CENTER), 30, "온도 조절을");
           u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", ALIGN_CENTER), 46, "종료하시겠습니까?");
-          CheckPushedButtonFunction();
           if (YN_Check < 0)
           {
             // YN_Check < 0 방지
@@ -525,14 +524,16 @@ void ButtonActiveFunction()
                 if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
                   userSetTemperature++;
                 upButtonStatusTime = millis();
+                if (millis() - upButtonCheckTime > 4000)
+                  ButtonStatus |= true << UP_BUTTON_TOGGLE_HIGH;
               }
-              if (millis() - upButtonCheckTime > 4000)
-                ButtonStatus &= true << UP_BUTTON_TOGGLE_HIGH;
             }
             if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
             {
               if (millis() - upButtonStatusTime > 300)
               {
+                if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
+                  userSetTemperature++;
                 upButtonStatusTime = millis();
               }
             }
@@ -541,15 +542,12 @@ void ButtonActiveFunction()
               ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW);
               upButtonCheckTime = 0;
               upButtonStatusTime = 0;
-              if (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false)
-                if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                  userSetTemperature++;
-                else
-                  ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_HIGH);
+              if (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false)    
+                ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_HIGH);
             }
           }
 
-          if (ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW)
+          if (ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW & true)
           {
             if (downButtonCheckTime == 0)
               upButtonCheckTime = millis();
@@ -564,7 +562,7 @@ void ButtonActiveFunction()
                 downButtonStatusTime = millis();
               }
               if (millis() - upButtonCheckTime > 4000)
-                ButtonStatus &= true << DOWN_BUTTON_TOGGLE_HIGH;
+                ButtonStatus |= true << DOWN_BUTTON_TOGGLE_HIGH;
             }
             if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
             {
@@ -581,10 +579,7 @@ void ButtonActiveFunction()
               downButtonCheckTime = 0;
               downButtonStatusTime = 0;
               if (((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true) == false)
-                if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-                  userSetTemperature--;
-                else
-                  ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_HIGH);
+                ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_HIGH);
             }
           }
           break;
@@ -724,9 +719,17 @@ void ButtonActiveFunction()
 
             if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true) {
               u8g2.clearBuffer();
+              if(abs(userSetTemperature - temperatureC) <= 1) {
+                DeviceStatus &= ~(0b111);
+                DeviceStatus |= TEMPERATURE_MAINTANENCE_MODE;
+              }
+              else {
+                DeviceStatus &= ~(0b111);
+                DeviceStatus |= ACTIVE_MODE;
+              }
+              ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
               endedSettingTemperatureDisplayPrint();
-              if(abs(userSetTemperature) )
-
+              u8g2.sendBuffer();
             }
             break;
           }
@@ -880,7 +883,8 @@ void loop()
   case STANBY_MODE:
     StanbyDisplayPrint();
     CheckPushedButtonFunction();
-      ButtonActiveFunction();
+    ButtonActiveFunction();
+    StanbyDisplayPrint();
     u8g2.sendBuffer();
     break;
 
@@ -905,6 +909,8 @@ void loop()
     }
     else
     {
+      CheckPushedButtonFunction();
+      ButtonActiveFunction();
       AM_count = 0;
       if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM) // PWM 설정
         dutyCycle = MAXPWM;
@@ -915,16 +921,11 @@ void loop()
         SetControlFeltier(dutyCycle, FELTIER_HEATING);
       else if (userSetTemperature - temperatureC < -2) // 목표 온도가 현재보다 2도 이상 낮을 때 (냉각 필요)
         SetControlFeltier(dutyCycle, FELTIER_COOLING);
-
-      CheckPushedButtonFunction();
-      ButtonActiveFunction();
     }
-
+  u8g2.sendBuffer();
   break;
 
 case TEMPERATURE_MAINTANENCE_MODE:
-
-  TMDisplayPrint();
   if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM)
     dutyCycle = MAXPWM;
   else
@@ -945,13 +946,15 @@ case TEMPERATURE_MAINTANENCE_MODE:
   }
   CheckPushedButtonFunction();
   ButtonActiveFunction();
+  TMDisplayPrint();
   u8g2.sendBuffer();
   break;
 
 case TEMPERATURE_SETTING_MODE:
-  settingTemperatureDisplayPrint();
+  u8g2.clearBuffer();
   CheckPushedButtonFunction();
   ButtonActiveFunction();
+  settingTemperatureDisplayPrint();
   u8g2.sendBuffer();
   break;
 
