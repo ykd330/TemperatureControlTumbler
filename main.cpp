@@ -13,16 +13,16 @@
 /*-----GPIO 설정부-----*/
 enum GPIO_PIN
 {
-  ULT_PIN = 1,      // 오류 핀
-  EEP_PIN = 2,      // 전류 제어 핀
-  ONE_WIRE_BUS = 3, // DS18B20 센서 핀
-  BUTTON_BOOT = 5,  // 모드 변경 버튼
-  BUTTON_UP = 6,    // 설정온도 상승 버튼
-  BUTTON_DOWN = 7,  // 설정온도 하강 버튼
-  SDA_I2C = 8,      // Hardware에서 설정된 I2C핀
-  SCL_I2C = 9,      // Hardware에서 설정된 I2C핀
-  COOLER_PIN = 20,  // 냉각 제어 핀
-  HEATER_PIN = 21   // 가열 제어 핀
+  COOLER_PWM_PIN = 1, // PWM
+  HEATER_PWM_PIN = 2, // PWM
+  ONE_WIRE_BUS = 3,   // DS18B20 센서 핀
+  BUTTON_BOOT = 5,    // 모드 변경 버튼
+  BUTTON_UP = 6,      // 설정온도 상승 버튼
+  BUTTON_DOWN = 7,    // 설정온도 하강 버튼
+  SDA_I2C = 8,        // Hardware에서 설정된 I2C핀
+  SCL_I2C = 9,        // Hardware에서 설정된 I2C핀
+  COOLER_PIN = 20,    // 냉각 제어 핀
+  HEATER_PIN = 21     // 가열 제어 핀
 };
 
 /*-----Module Setting-----*/
@@ -35,12 +35,12 @@ int temperatureC = 0;                 // 현재 온도 저장 변수
 int RTC_DATA_ATTR userSetTemperature; // 설정 온도 저장 변수
 
 /*-----시스템 관리 / 제어용-----*/
-unsigned int DeviceStatus = 0b000000000000; // 0b Error : 0 | Feltier 00 | Display Sleep : 0 | BootButton : 00 | DownButton / Upbutton 00 | Battery Charged State : 0 | Device mode : 000
+unsigned int DeviceStatus = 0b000000000110; // 0b Error : 0 | Feltier 00 | Display Sleep : 0 | BootButton : 00 | DownButton / Upbutton 00 | Battery Charged State : 0 | Device mode : 000
 enum DeviceStatusbit
 {                           // 0b00000 | Error : 0 | Display Sleep : 0 | Feltier 00 | BootButton : 00 | DownButton / Upbutton 00 | Battery Charged State : 0 | Device mode : 000
   ERROR_YN = 11,            // 오류 발생 여부
-  DISPLAY_SLEEPING = 8,     // Display 절전 모드 여부
   FELTIER_MODE = 9,         // Feltier 작동 모드
+  DISPLAY_SLEEPING = 8,     // Display 절전 모드 여부
   BOOT_BUTTON = 6,          // Boot 버튼 상태
   DOWN_BUTTON = 5,          // Down 버튼 상태
   UP_BUTTON = 4,            // Up 버튼 상태
@@ -381,6 +381,7 @@ void loadUserSetTemperature()
 /*------------------------Button Logic Functions------------------------*/
 void CheckPushedButtonFunction()
 {
+
   if ((DeviceStatus >> UP_BUTTON) & true)
   {
     ButtonStatus |= true << UP_BUTTON_TOGGLE_LOW;
@@ -391,360 +392,296 @@ void CheckPushedButtonFunction()
     ButtonStatus |= true << DOWN_BUTTON_TOGGLE_LOW;
     DeviceStatus &= ~(!false << DOWN_BUTTON);
   }
-
-  if (((DeviceStatus >> BOOT_BUTTON) & true) && ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true))
+  if (((DeviceStatus >> BOOT_BUTTON) & true))
   {
-    ButtonStatus |= true << BOOT_BUTTON_TRIGGER_2;
-    DeviceStatus &= ~(!false << BUTTON_BOOT);
+    if (!((DeviceStatus >> BOOT_BUTTON + 1) & true))
+    {
+      ButtonStatus |= true << BOOT_BUTTON_TOGGLE;
+      if ((DeviceStatus & 0b111) != STANBY_MODE)
+        DeviceStatus |= true << BOOT_BUTTON + 1;
+      DeviceStatus &= ~(!false << BUTTON_BOOT);
+    }
+    else if (((DeviceStatus >> BOOT_BUTTON + 1) & true))
+    {
+      ButtonStatus |= true << BOOT_BUTTON_TRIGGER_2;
+      DeviceStatus &= ~(!false << BUTTON_BOOT);
+      DeviceStatus &= ~(!false << BUTTON_BOOT + 1);
+    }
   }
-  if ((DeviceStatus >> BOOT_BUTTON) & true)
+}
+
+void ButtonTempControlFunction()
+{
+  if (digitalRead(BUTTON_UP))
   {
-    ButtonStatus |= true << BOOT_BUTTON_TOGGLE;
-    DeviceStatus &= ~(!false << BUTTON_BOOT);
+    if (upButtonCheckTime == 0)
+    { // 버튼 누를시 1회성 동작
+      if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
+        userSetTemperature++;
+      upButtonCheckTime = millis();
+    }
+    if (upButtonStatusTime == 0)
+      upButtonStatusTime = millis();
+
+    if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
+    {
+      if (millis() - upButtonStatusTime > 150)
+      {
+        if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
+          userSetTemperature++;
+        upButtonStatusTime = millis();
+      }
+    }
+    else if (millis() - upButtonCheckTime > 1500 && (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false))
+    {
+      if (millis() - upButtonStatusTime > 750)
+      {
+        if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
+          userSetTemperature++;
+        upButtonStatusTime = millis();
+        if (millis() - upButtonCheckTime > 3000)
+          ButtonStatus |= true << UP_BUTTON_TOGGLE_HIGH;
+      }
+    }
+  }
+  else if (!digitalRead(BUTTON_UP))
+  {
+    ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW);
+    ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_HIGH);
+    upButtonCheckTime = 0;
+    upButtonStatusTime = 0;
+  }
+
+  if (digitalRead(BUTTON_DOWN))
+  {
+    if (downButtonCheckTime == 0)
+    { // 버튼 누를시 1회성 동작
+      if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+        userSetTemperature--;
+      downButtonCheckTime = millis();
+    }
+    if (downButtonStatusTime == 0)
+      downButtonStatusTime = millis();
+
+    if ((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true)
+    {
+      if (millis() - downButtonStatusTime > 150)
+      {
+        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+          userSetTemperature--;
+        downButtonStatusTime = millis();
+      }
+    }
+    else if (millis() - downButtonCheckTime > 1500 && (((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true) == false))
+    {
+      if (millis() - downButtonStatusTime > 750)
+      {
+        if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
+          userSetTemperature--;
+        downButtonStatusTime = millis();
+        if (millis() - downButtonCheckTime > 3000)
+          ButtonStatus |= true << DOWN_BUTTON_TOGGLE_HIGH;
+      }
+    }
+  }
+  else if (!digitalRead(BUTTON_DOWN))
+  {
+    ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW);
+    ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_HIGH);
+    downButtonCheckTime = 0;
+    downButtonStatusTime = 0;
   }
 }
 
 void ButtonActiveFunction()
 {
+  CheckPushedButtonFunction();
   if ((DeviceStatus >> DISPLAY_SLEEPING) & true)
   {
     if (ButtonStatus >> BOOT_BUTTON_TOGGLE & true)
     {
-      displaySleepTime = millis();              // 버튼이 눌리면 절전모드 해제
+      displaySleepTime = millis();                     // 버튼이 눌리면 절전모드 해제
       ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE); // Boot 버튼 상태 초기화
     }
     if (ButtonStatus >> UP_BUTTON_TOGGLE_LOW & true)
     {
-      displaySleepTime = millis();            // 버튼이 눌리면 절전모드 해제
+      displaySleepTime = millis();                       // 버튼이 눌리면 절전모드 해제
       ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW); // Up 버튼 상태 초기화
     }
     if (ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW & true)
     {
-      displaySleepTime = millis();              // 버튼이 눌리면 절전모드 해제
+      displaySleepTime = millis();                         // 버튼이 눌리면 절전모드 해제
       ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW); // Down 버튼 상태 초기화
     }
   }
-  if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true)
+
+  if (digitalRead(BUTTON_BOOT)) // boot 버튼 토글 시 로직 - Deep Sleep 모드를 활용한 재부팅 HIGH
   {
-    if (digitalRead(BUTTON_BOOT) == HIGH) // boot 버튼 토글 시 로직 - Deep Sleep 모드를 활용한 재부팅
+    if (reBootCheckTime == 0)
     {
-      if (reBootCheckTime == 0)
-      {
-        reBootCheckTime = millis();
-      }
-      if (millis() - reBootCheckTime >= 5000)
-      {
-        ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);                   // Boot 버튼을 5초 이상 누르면 checkToBootButtonTogle을 false로 설정
-        DeviceStatus &= ~(!false << BOOT_BUTTON);                          // bootButton을 false로 설정
-        esp_sleep_enable_timer_wakeup(3 * 1000000);                        // 3초 후 Deep Sleep 모드 해제 설정
-        u8g2.setPowerSave(1);                                              // Display 절전 모드 진입
-        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO); // RTC Peripherals 전원 차단
-        esp_deep_sleep_start();                                            // ESP32-C3 Deep Sleep 모드로 전환
-        reBootCheckTime = 0;
-      }
+      reBootCheckTime = millis();
     }
-    else if (digitalRead(BUTTON_BOOT) == LOW) // boot 버튼 작동 시 로직
+    if (millis() - reBootCheckTime >= 5000)
     {
-      reBootCheckTime = 0; // Boot버튼을 떼면 reBootCheckTime 초기화
-      switch (DeviceStatus & 0b111)
-      {
-      case STANBY_MODE:
+      ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);                   // Boot 버튼을 5초 이상 누르면 checkToBootButtonTogle을 false로 설정
+      DeviceStatus &= ~(!false << BOOT_BUTTON);                          // bootButton을 false로 설정
+      esp_sleep_enable_timer_wakeup(3 * 1000000);                        // 3초 후 Deep Sleep 모드 해제 설정
+      u8g2.setPowerSave(1);                                              // Display 절전 모드 진입
+      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO); // RTC Peripherals 전원 차단
+      esp_deep_sleep_start();                                            // ESP32-C3 Deep Sleep 모드로 전환
+      reBootCheckTime = 0;
+    }
+  }
+  else if (!digitalRead(BUTTON_BOOT)) // boot 버튼 작동 시 로직
+  {
+    reBootCheckTime = 0; // Boot버튼을 떼면 reBootCheckTime 초기화
+    switch (DeviceStatus & 0b111)
+    {
+    case STANBY_MODE:
+      if (ButtonStatus >> BOOT_BUTTON_TOGGLE & true) {
+        ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2); 
+        ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
         DeviceStatus &= ~(0b111);
         DeviceStatus |= TEMPERATURE_SETTING_MODE;
-        ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
-        break;
+      }
+      break;
 
-      case ACTIVE_MODE:
-        if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true)
+    case ACTIVE_MODE:
+      if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true) // 온도 조절 모드에서 버튼을 누를 때 동작 : 작동 정지 의사 묻기기
+      {
+        u8g2.clearBuffer();
+        u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", ALIGN_CENTER), 30, "온도 조절을");
+        u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", ALIGN_CENTER), 46, "종료하시겠습니까?");
+        if ((ButtonStatus >> UP_BUTTON_TOGGLE_LOW) & true) // UP 버튼 누를 시
         {
-          u8g2.clearBuffer();
-          u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", ALIGN_CENTER), 30, "온도 조절을");
-          u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", ALIGN_CENTER), 46, "종료하시겠습니까?");
-          if (YN_Check < 0)
-          {
-            // YN_Check < 0 방지
-            YN_Check = 1;
-          }
-          if ((ButtonStatus >> UP_BUTTON_TOGGLE_LOW) & true)
-          {
-            YN_Check++;
-            ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW); // Up 버튼 상태 초기화
-          }
-          if ((ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW) & true)
-          {
-            YN_Check--;
-            ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW); // Down 버튼 상태 초기화
-          }
-
-          switch (YN_Check % 2)
-          {
-          case 0:
-            u8g2.drawButtonUTF8(40, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
-            u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
-            u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
-            if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
-            {
-              DeviceStatus &= ~(0b111);
-              DeviceStatus |= STANBY_MODE;
-              ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
-              ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
-              u8g2.clearBuffer();
-              u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", ALIGN_CENTER), 30, "온도 조절을");
-              u8g2.drawUTF8(returnTextWidthPixel("종료합니다.", ALIGN_CENTER), 50, "종료합니다.");
-            }
-            break;
-
-          case 1:
-            u8g2.drawUTF8(25, 63, "YES");
-            u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
-            u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ ") + 10, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
-            if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
-            {
-              ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
-              ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
-            }
-          }
-          u8g2.sendBuffer();
+          YN_Check = 0;
+          ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW); // Up 버튼 상태 초기화
         }
-        else if (((ButtonStatus >> BOOT_BUTTON_TOGGLE) & 1) == false)
+        if ((ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW) & true)
         {
-          if ((ButtonStatus >> UP_BUTTON_TOGGLE_LOW) & true)
-          {
-            if (upButtonCheckTime == 0) {
-              if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                  userSetTemperature++;
-              upButtonCheckTime = millis();
-            }
-            if (millis() - upButtonCheckTime > 1500 && (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false))
-            {
-              if (upButtonStatusTime == 0)
-                upButtonStatusTime = millis();
-              if (millis() - upButtonStatusTime > 1000)
-              {
-                if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                  userSetTemperature++;
-                upButtonStatusTime = millis();
-                if (millis() - upButtonCheckTime > 4000)
-                  ButtonStatus |= true << UP_BUTTON_TOGGLE_HIGH;
-              }
-            }
-            if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
-            {
-              if (millis() - upButtonStatusTime > 300)
-              {
-                if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                  userSetTemperature++;
-                upButtonStatusTime = millis();
-              }
-            }
-            if (!digitalRead(GPIO_PIN::BUTTON_UP))
-            {
-              ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW);
-              upButtonCheckTime = 0;
-              upButtonStatusTime = 0;
-              if (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false)    
-                ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_HIGH);
-            }
-          }
+          YN_Check = 1;
+          ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW); // Down 버튼 상태 초기화
+        }
 
-          if (ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW & true)
+        switch (YN_Check)
+        {
+        case 0: // 온도조절 YES 선택 시 - 작동 종료 후 Stanby Mode로 변경
+          u8g2.drawButtonUTF8(40, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
+          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
+          if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true) // 작동 정지에 대한 확정 - BOOT버튼
           {
-            if (downButtonCheckTime == 0)
-              upButtonCheckTime = millis();
-            if (millis() - downButtonCheckTime > 1500 && (((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true) == false))
-            {
-              if (downButtonCheckTime == 0)
-                downButtonCheckTime = millis();
-              if (millis() - downButtonStatusTime > 1000)
-              {
-                if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-                  userSetTemperature--;
-                downButtonStatusTime = millis();
-              }
-              if (millis() - upButtonCheckTime > 4000)
-                ButtonStatus |= true << DOWN_BUTTON_TOGGLE_HIGH;
-            }
-            if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
-            {
-              if (millis() - downButtonStatusTime > 300)
-              {
-                if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-                  userSetTemperature--;
-                downButtonStatusTime = millis();
-              }
-            }
-            if (!digitalRead(GPIO_PIN::BUTTON_DOWN))
-            {
-              ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW);
-              downButtonCheckTime = 0;
-              downButtonStatusTime = 0;
-              if (((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true) == false)
-                ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_HIGH);
-            }
+            DeviceStatus &= ~(0b111);
+            DeviceStatus |= STANBY_MODE;
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
+            u8g2.clearBuffer();
+            u8g2.drawUTF8(returnTextWidthPixel("온도 조절을", ALIGN_CENTER), 30, "온도 조절을");
+            u8g2.drawUTF8(returnTextWidthPixel("종료합니다.", ALIGN_CENTER), 50, "종료합니다.");
+            u8g2.sendBuffer();
+            delay(2000);
           }
           break;
 
-        case TEMPERATURE_MAINTANENCE_MODE:
-          if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true)
+        case 1: // 온도조절 NO 선택 시 - 기존 작동 유지
+          u8g2.drawUTF8(25, 63, "YES");
+          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+          u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ ") + 10, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
+          if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
           {
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
+          }
+        }
+        u8g2.sendBuffer();
+      }
+      else if (((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true) == false) // Boot버튼을 누르지 않았을 경우 - ACTIVE 작동 로직
+      {
+        ButtonTempControlFunction();
+      }
+      break;
+
+    case TEMPERATURE_MAINTANENCE_MODE:
+      if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true)
+      {
+        u8g2.clearBuffer();
+        u8g2.drawUTF8(returnTextWidthPixel("온도 유지를", ALIGN_CENTER), 30, "온도 유지를");
+        u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", ALIGN_CENTER), 46, "종료하시겠습니까?");
+
+        if ((ButtonStatus >> UP_BUTTON_TOGGLE_LOW) & true) // UP 버튼 누를 시
+        {
+          YN_Check = 0;
+          ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW); // Up 버튼 상태 초기화
+        }
+        if ((ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW) & true)
+        {
+          YN_Check = 1;
+          ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW); // Down 버튼 상태 초기화
+        }
+        switch (YN_Check)
+        {
+        case 0: // YES
+          u8g2.drawButtonUTF8(40, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
+          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
+          if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
+          {
+            DeviceStatus &= ~(0b111);
+            DeviceStatus |= STANBY_MODE;
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
             u8g2.clearBuffer();
             u8g2.drawUTF8(returnTextWidthPixel("온도 유지를", ALIGN_CENTER), 30, "온도 유지를");
-            u8g2.drawUTF8(returnTextWidthPixel("종료하시겠습니까?", ALIGN_CENTER), 46, "종료하시겠습니까?");
-            CheckPushedButtonFunction();
-            if (YN_Check < 0)
-            {
-              // YN_Check < 0 방지
-              YN_Check = 1;
-            }
-            if ((ButtonStatus >> UP_BUTTON_TOGGLE_LOW) & true)
-            {
-              YN_Check++;
-              ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW); // Up 버튼 상태 초기화
-            }
-            if ((ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW) & true)
-            {
-              YN_Check--;
-              ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW); // Down 버튼 상태 초기화
-            }
-
-            switch (YN_Check % 2)
-            {
-            case 0:
-              u8g2.drawButtonUTF8(40, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "YES");
-              u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
-              u8g2.drawUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ "), 63, "NO");
-              if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
-              {
-                DeviceStatus &= ~(0b111);
-                DeviceStatus |= STANBY_MODE;
-                ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
-                ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
-                u8g2.clearBuffer();
-                u8g2.drawUTF8(returnTextWidthPixel("온도 유지를", ALIGN_CENTER), 30, "온도 유지를");
-                u8g2.drawUTF8(returnTextWidthPixel("종료합니다.", ALIGN_CENTER), 50, "종료합니다.");
-              }
-              break;
-
-            case 1:
-              u8g2.drawUTF8(25, 63, "YES");
-              u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
-              u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ ") + 10, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
-              if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
-              {
-                ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
-                ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
-              }
-            }
-            u8g2.sendBuffer();
-            break;
-
-          case TEMPERATURE_SETTING_MODE:
-            if (ButtonStatus >> UP_BUTTON_TOGGLE_LOW)
-            {
-              if (upButtonCheckTime == 0)
-                upButtonCheckTime = millis();
-              if (millis() - upButtonCheckTime > 1500 && (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false))
-              {
-                if (upButtonStatusTime == 0)
-                  upButtonStatusTime = millis();
-                if (millis() - upButtonStatusTime > 1000)
-                {
-                  if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                    userSetTemperature++;
-                  upButtonStatusTime = millis();
-                }
-                if (millis() - upButtonCheckTime > 4000)
-                  ButtonStatus &= true << UP_BUTTON_TOGGLE_HIGH;
-              }
-              if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
-              {
-                if (millis() - upButtonStatusTime > 300)
-                {
-                  if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                    userSetTemperature++;
-                  upButtonStatusTime = millis();
-                }
-              }
-              if (!digitalRead(GPIO_PIN::BUTTON_UP))
-              {
-                ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_LOW);
-                upButtonCheckTime = 0;
-                upButtonStatusTime = 0;
-                if (((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true) == false)
-                  if (userSetTemperature < SYSTEM_LIMIT_MAX_TEMPERATURE)
-                    userSetTemperature++;
-                  else
-                    ButtonStatus &= ~(!false << UP_BUTTON_TOGGLE_HIGH);
-              }
-            }
-
-            if (ButtonStatus >> DOWN_BUTTON_TOGGLE_LOW)
-            {
-              if (downButtonCheckTime == 0)
-                upButtonCheckTime = millis();
-              if (millis() - downButtonCheckTime > 1500 && (((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true) == false))
-              {
-                if (downButtonCheckTime == 0)
-                  downButtonCheckTime = millis();
-                if (millis() - downButtonStatusTime > 1000)
-                {
-                  if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-                    userSetTemperature--;
-                  downButtonStatusTime = millis();
-                }
-                if (millis() - upButtonCheckTime > 4000)
-                  ButtonStatus &= true << DOWN_BUTTON_TOGGLE_HIGH;
-              }
-              if ((ButtonStatus >> UP_BUTTON_TOGGLE_HIGH) & true)
-              {
-                if (millis() - downButtonStatusTime > 300)
-                {
-                  if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-                    userSetTemperature--;
-                  downButtonStatusTime = millis();
-                }
-              }
-              if (!digitalRead(GPIO_PIN::BUTTON_DOWN))
-              {
-                ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_LOW);
-                downButtonCheckTime = 0;
-                downButtonStatusTime = 0;
-                if (((ButtonStatus >> DOWN_BUTTON_TOGGLE_HIGH) & true) == false)
-                  if (userSetTemperature > SYSTEM_LIMIT_MIN_TEMPERATURE)
-                    userSetTemperature--;
-                  else
-                    ButtonStatus &= ~(!false << DOWN_BUTTON_TOGGLE_HIGH);
-              }
-            }
-
-            if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true) {
-              u8g2.clearBuffer();
-              if(abs(userSetTemperature - temperatureC) <= 1) {
-                DeviceStatus &= ~(0b111);
-                DeviceStatus |= TEMPERATURE_MAINTANENCE_MODE;
-              }
-              else {
-                DeviceStatus &= ~(0b111);
-                DeviceStatus |= ACTIVE_MODE;
-              }
-              ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
-              endedSettingTemperatureDisplayPrint();
-              u8g2.sendBuffer();
-            }
-            break;
+            u8g2.drawUTF8(returnTextWidthPixel("종료합니다.", ALIGN_CENTER), 50, "종료합니다.");
           }
+          break;
+
+        case 1: // NO
+          u8g2.drawUTF8(25, 63, "YES");
+          u8g2.drawUTF8(50 + u8g2.getUTF8Width(" "), 63, "/ ");
+          u8g2.drawButtonUTF8(50 + u8g2.getUTF8Width(" ") + u8g2.getUTF8Width("/ ") + 10, 63, U8G2_BTN_BW1 | U8G2_BTN_HCENTER, 0, 1, 1, "NO");
+          if ((ButtonStatus >> BOOT_BUTTON_TRIGGER_2) & true)
+          {
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TRIGGER_2);
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
+          }
+        }
+
+        u8g2.sendBuffer();
+        break;
+
+      case TEMPERATURE_SETTING_MODE:
+        ButtonTempControlFunction();
+        if ((ButtonStatus >> BOOT_BUTTON_TOGGLE) & true)
+        {
+          if (abs(userSetTemperature - temperatureC) <= 1)
+          {
+            DeviceStatus &= ~(0b111);
+            DeviceStatus |= TEMPERATURE_MAINTANENCE_MODE;
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
+          }
+          else
+          {
+            DeviceStatus &= ~(0b111);
+            DeviceStatus |= ACTIVE_MODE;
+            ButtonStatus &= ~(!false << BOOT_BUTTON_TOGGLE);
+          }
+          u8g2.clearBuffer();
+          endedSettingTemperatureDisplayPrint();
+          u8g2.sendBuffer();
+          delay(2000);
+          break;
         }
       }
     }
   }
 }
-// 설정 온도 증가 / 감소 버튼 함수
+
 /*------------------------Button Logic Functions------------------------*/
 
 /*------------------------DRV8833 Control Functions------------------------*/
 void SetupPWM(unsigned int Pin, unsigned int Channel, unsigned int Frequency, unsigned int Resolution)
 {
-  pinMode(Pin, OUTPUT); // PWM 핀 설정
   ledcSetup(Channel, Frequency, Resolution);
   ledcAttachPin(Pin, Channel);
 }
@@ -754,16 +691,24 @@ void SetControlFeltier(unsigned int DutyCycle = 0, FeltierControlPWM Mode = FELT
   switch (Mode)
   {
   case FELTIER_STANBY:
+    digitalWrite(HEATER_PIN, LOW);
+    digitalWrite(COOLER_PIN, LOW);
     ledcWrite(PWM_HEATING_CHANNEL, 0);
     ledcWrite(PWM_COOLING_CHANNEL, 0);
     break;
 
   case FELTIER_HEATING:
+    digitalWrite(COOLER_PIN, LOW);
+    delay(100);
+    digitalWrite(HEATER_PIN, HIGH);
     ledcWrite(PWM_HEATING_CHANNEL, DutyCycle);
     ledcWrite(PWM_COOLING_CHANNEL, 0);
     break;
 
   case FELTIER_COOLING:
+    digitalWrite(HEATER_PIN, LOW);
+    delay(100);
+    digitalWrite(COOLER_PIN, HIGH);
     ledcWrite(PWM_HEATING_CHANNEL, 0);
     ledcWrite(PWM_COOLING_CHANNEL, DutyCycle);
     break;
@@ -779,13 +724,10 @@ void setup()
   pinMode(BUTTON_UP, INPUT_PULLDOWN);
   pinMode(BUTTON_DOWN, INPUT_PULLDOWN);
   pinMode(BUTTON_BOOT, INPUT_PULLDOWN);
-  pinMode(ULT_PIN, INPUT_PULLUP);
 
   /*------pinMode OUTPUT------*/
   pinMode(HEATER_PIN, OUTPUT);
   pinMode(COOLER_PIN, OUTPUT);
-  pinMode(EEP_PIN, OUTPUT);
-  digitalWrite(EEP_PIN, HIGH);
 
   /*------DS18B20설정부------*/
   sensors.begin();                     // DS18B20 센서 초기화
@@ -809,15 +751,14 @@ void setup()
   attachInterrupt(BUTTON_UP, upButtonF, RISING);
   attachInterrupt(BUTTON_DOWN, downButtonF, RISING);
   attachInterrupt(BUTTON_BOOT, bootButtonF, RISING);
-  attachInterrupt(ULT_PIN, DRV8866_error, FALLING);
 
   /*------File System 설정부------*/
   LittleFS.begin(false);    // LittleFS 초기화
   loadUserSetTemperature(); // 설정 온도 불러오기
 
   /*------PWM설정부------*/
-  SetupPWM(COOLER_PIN, PWM_COOLING_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  SetupPWM(HEATER_PIN, PWM_HEATING_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  SetupPWM(COOLER_PWM_PIN, PWM_COOLING_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  SetupPWM(HEATER_PWM_PIN, PWM_HEATING_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 }
 /*----------setup----------*/
 
@@ -881,16 +822,13 @@ void loop()
   switch (DeviceStatus & 0b111)
   {
   case STANBY_MODE:
-    StanbyDisplayPrint();
-    CheckPushedButtonFunction();
     ButtonActiveFunction();
     StanbyDisplayPrint();
     u8g2.sendBuffer();
     break;
 
   case ACTIVE_MODE:
-    ActiveDisplayPrint();
-    if (abs(userSetTemperature - temperatureC) < 1) // 온도 1도 이내로 유지 시 온도 유지모드 진입
+    if (abs(userSetTemperature - temperatureC) == 0) // 온도 1도 이내로 유지 시 온도 유지모드 진입
     {
       if (AM_count == 0)
         AM_count = millis();
@@ -907,71 +845,70 @@ void loop()
         break;
       }
     }
+    else if (abs(userSetTemperature - temperatureC) > 1)
+    {
+      AM_count = 0;
+    }
+    ButtonActiveFunction();
+    if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM) // PWM 설정
+      dutyCycle = MAXPWM;
+    else
+      dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
+
+    if (userSetTemperature - temperatureC > 2) // 목표 온도가 현재보다 2도 이상 높을 때 (가열 필요)
+      SetControlFeltier(dutyCycle, FELTIER_HEATING);
+    else if (userSetTemperature - temperatureC < -2) // 목표 온도가 현재보다 2도 이상 낮을 때 (냉각 필요)
+      SetControlFeltier(dutyCycle, FELTIER_COOLING);
+    ActiveDisplayPrint();
+    u8g2.sendBuffer();
+    break;
+
+  case TEMPERATURE_MAINTANENCE_MODE:
+    if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM)
+      dutyCycle = MAXPWM;
     else
     {
-      CheckPushedButtonFunction();
-      ButtonActiveFunction();
-      AM_count = 0;
-      if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM) // PWM 설정
-        dutyCycle = MAXPWM;
-      else
-        dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
-
-      if (userSetTemperature - temperatureC > 2) // 목표 온도가 현재보다 2도 이상 높을 때 (가열 필요)
-        SetControlFeltier(dutyCycle, FELTIER_HEATING);
-      else if (userSetTemperature - temperatureC < -2) // 목표 온도가 현재보다 2도 이상 낮을 때 (냉각 필요)
-        SetControlFeltier(dutyCycle, FELTIER_COOLING);
+      dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
     }
-  u8g2.sendBuffer();
-  break;
+    if (userSetTemperature - temperatureC > 1)
+    { // 현재 온도가 설정 온도보다 deadband 이상 낮으면 가열
+      SetControlFeltier(dutyCycle, FELTIER_HEATING);
+    }
+    else if (userSetTemperature - temperatureC < -1)
+    { // 현재 온도가 설정 온도보다 deadband 이상 높으면 냉각
+      SetControlFeltier(dutyCycle, FELTIER_COOLING);
+    }
+    else
+    { // 데드밴드 내에서는 대기
+      SetControlFeltier(0, FELTIER_STANBY);
+    }
+    ButtonActiveFunction();
+    TMDisplayPrint();
+    u8g2.sendBuffer();
+    break;
 
-case TEMPERATURE_MAINTANENCE_MODE:
-  if (abs(userSetTemperature - temperatureC) >= MAXTEMPDIFF_PWM)
-    dutyCycle = MAXPWM;
-  else
-  {
-    dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
+  case TEMPERATURE_SETTING_MODE:
+    ButtonActiveFunction();
+    u8g2.clearBuffer();
+    settingTemperatureDisplayPrint();
+    u8g2.sendBuffer();
+    saveUserSetTemperature(userSetTemperature);
+    break;
+
+  case BOOTING_MODE:
+    u8g2.clearBuffer();
+    startingDisplayPrint();
+    u8g2.sendBuffer();
+    delay(3000);
+    DeviceStatus = (DeviceStatus & ~0b111) | STANBY_MODE; // 부팅 모드 종료 후 대기 모드로 전환
+    break;
+
+  case OVER_HEATING:
+    u8g2.clearBuffer();
+    u8g2.drawUTF8(0, 40, "System Error");
+
+    u8g2.sendBuffer();
+    break;
   }
-  if (userSetTemperature - temperatureC > 1)
-  { // 현재 온도가 설정 온도보다 deadband 이상 낮으면 가열
-    SetControlFeltier(dutyCycle, FELTIER_HEATING);
-  }
-  else if (userSetTemperature - temperatureC < -1)
-  { // 현재 온도가 설정 온도보다 deadband 이상 높으면 냉각
-    SetControlFeltier(dutyCycle, FELTIER_COOLING);
-  }
-  else
-  { // 데드밴드 내에서는 대기
-    SetControlFeltier(0, FELTIER_STANBY);
-  }
-  CheckPushedButtonFunction();
-  ButtonActiveFunction();
-  TMDisplayPrint();
-  u8g2.sendBuffer();
-  break;
-
-case TEMPERATURE_SETTING_MODE:
-  u8g2.clearBuffer();
-  CheckPushedButtonFunction();
-  ButtonActiveFunction();
-  settingTemperatureDisplayPrint();
-  u8g2.sendBuffer();
-  break;
-
-case BOOTING_MODE:
-  u8g2.clearBuffer();
-  startingDisplayPrint();
-  u8g2.sendBuffer();
-  delay(3000);
-  DeviceStatus = (DeviceStatus & ~0b111) | STANBY_MODE; // 부팅 모드 종료 후 대기 모드로 전환
-  break;
-
-case OVER_HEATING:
-  u8g2.clearBuffer();
-  u8g2.drawUTF8(0, 40, "System Error");
-
-  u8g2.sendBuffer();
-  break;
-}
 }
 /*----------loop----------*/
