@@ -338,7 +338,7 @@ void IRAM_ATTR bootButtonF() // Boot Button Interrupt Service Routine
 /*------------------------사용자 함수 정의 부분------------------------*/
 
 /*------시스템 내부 feltier 제어 결정 함수------*/
-void changeControlMode(ControlMode control_device_mode) // 열전소자 제어 함수
+void changeFeltierMode(ControlMode control_device_mode) // 열전소자 제어 함수
 {
   if (control_device_mode == HEATER_MODE)
   {
@@ -682,19 +682,19 @@ void FeltierControlFunction(unsigned int CalibrateTemperatureValues)
   {
     if (ActiveFeltier == COOLER_MODE)
     {
-      changeControlMode(STOP_MODE);
+      changeFeltierMode(STOP_MODE);
       delay(50);
     }
-    changeControlMode(HEATER_MODE);
+    changeFeltierMode(HEATER_MODE);
   }
   else if (temperatureC - CalibrateTemperatureValues > userSetTemperature)
   {
     if (ActiveFeltier == HEATER_MODE)
     {
-      changeControlMode(STOP_MODE);
+      changeFeltierMode(STOP_MODE);
       delay(50);
     }
-    changeControlMode(COOLER_MODE);
+    changeFeltierMode(COOLER_MODE);
   }
 }
 /*------------------------Button Logic------------------------*/
@@ -745,9 +745,8 @@ void setup()
   /*------PWM설정부------*/
   pinMode(COOLER_PIN, OUTPUT); // PWM 핀 설정
   pinMode(HEATER_PIN, OUTPUT);
-
-  ledcSetup(HEATER_PWM_PIN, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
-  ledcSetup(COOLER_PWM_PIN, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
+  ledcSetup(PWM_HEATING_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
+  ledcSetup(PWM_COOLING_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
   ledcAttachPin(HEATER_PWM_PIN, PWM_HEATING_CHANNEL);  // PWM 핀과 채널 연결
   ledcAttachPin(COOLER_PWM_PIN, PWM_COOLING_CHANNEL);
 }
@@ -812,12 +811,12 @@ void loop()
   {
   case STANBY_MODE:
     StanbyDisplayPrint();
+    changeFeltierMode(STOP_MODE);
     u8g2.sendBuffer();
     break;
 
   case ACTIVE_MODE:
     ActiveDisplayPrint();
-    FeltierControlFunction(2); // 온도 값 보정치 2
     if (abs(userSetTemperature - temperatureC) < 1)
     {
       if (AM_count == 0)
@@ -846,6 +845,7 @@ void loop()
     {
       dutyCycle = map(abs(userSetTemperature - temperatureC), 0, MAXTEMPDIFF_PWM, MINPWM, MAXPWM);
     }
+    FeltierControlFunction(2); // 온도 값 보정치 2
 
     if (Trigger == false && DisplaySleeping == false)
     {
