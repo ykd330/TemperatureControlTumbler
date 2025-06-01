@@ -343,18 +343,21 @@ void changeFeltierMode(ControlMode control_device_mode) // 열전소자 제어 �
   if (control_device_mode == HEATER_MODE)
   {
     digitalWrite(HEATER_PIN, HIGH);            // 가열 제어 핀 HIGH
-    digitalWrite(COOLER_PIN, LOW);             // 냉각 제어 핀 LOW
+    digitalWrite(COOLER_PIN, HIGH);             // 냉각 제어 핀 LOW
     digitalWrite(COOLING_PAN, HIGH);
-    ledcWrite(PWM_HEATING_CHANNEL, dutyCycle); // 가열 PWM
     ledcWrite(PWM_COOLING_CHANNEL, 0);
+    ledcWrite(PWM_HEATING_CHANNEL, dutyCycle); // 가열 PWM
   }
   else if (control_device_mode == COOLER_MODE)
   {
-    digitalWrite(HEATER_PIN, LOW);             // 가열 제어 핀 LOW
+    digitalWrite(HEATER_PIN, HIGH);             // 가열 제어 핀 LOW
     digitalWrite(COOLER_PIN, HIGH);            // 냉각 제어 핀 HIGH
     digitalWrite(COOLING_PAN, HIGH);
-    ledcWrite(PWM_COOLING_CHANNEL, dutyCycle); // 냉각 PWM
     ledcWrite(PWM_HEATING_CHANNEL, 0);
+    if(temperatureC < 25)
+      ledcWrite(PWM_COOLING_CHANNEL, dutyCycle); // 냉각 PWM
+    else
+      ledcWrite(PWM_COOLING_CHANNEL, 100); // 냉각 PWM
   }
   else if (control_device_mode == STOP_MODE)
   {
@@ -715,6 +718,7 @@ void setup()
   pinMode(COOLER_PIN, OUTPUT);
   pinMode(COOLING_PAN, OUTPUT);
 
+
   /*------DS18B20설정부------*/
   sensors.begin();                     // DS18B20 센서 초기화
   sensors.setWaitForConversion(false); // 비동기식으로 온도 측정
@@ -743,8 +747,6 @@ void setup()
   loadUserSetTemperature(); // 설정 온도 불러오기
 
   /*------PWM설정부------*/
-  pinMode(COOLER_PIN, OUTPUT); // PWM 핀 설정
-  pinMode(HEATER_PIN, OUTPUT);
   ledcSetup(PWM_HEATING_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
   ledcSetup(PWM_COOLING_CHANNEL, PWM_FREQ, PWM_RESOLUTION); // PWM 설정
   ledcAttachPin(HEATER_PWM_PIN, PWM_HEATING_CHANNEL);  // PWM 핀과 채널 연결
