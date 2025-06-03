@@ -5,21 +5,6 @@
 SoftWare설계 및 제작 담당 : 유경도
 담당교수 : 김수찬교수님
 
-HardWare spec :
-Target-Board : ESP32-C3 SuperMini
-Module :
-1 x Display : OLED 12864 I2C
-1 x Temp Sensors : DS18B20
-3 x 3Pin Button (Output / VCC / GND)
-1 x Battery Manigement : MAX17043 (1S) (고장으로 사용 불가) 
-1 x StepDown Converter : LM2596
-1 x Feltier : TEC1-12704
-1 x Motor Drive : BTS7960
-1 x AC-DC Adaptor (12V 5A)
-1 x DC barrel jack (5.5 x 2.1)
-1 x Battery : li-po 3000mAh
-하드웨어 구성도 : [하드웨어 구성도.pdf](https://github.com/user-attachments/files/20577654/default.pdf)
-
 Development Environment :
 Dev tool : VSCode (Platform IO) + Arduino IDE(Test 및 Serial통신) <- VSCode에서 CDC boot 옵션 설정이 제공되지 않아 임의의 Serial통신이 불가능
 Simulation : Wokwi Simulator(ESP32-C3)
@@ -33,24 +18,25 @@ used Library :
 6. FS.h / LittleFS.h (File Save )
 7. SparkFun_MAX1704x_Fuel_Gauge_Arduino_Library.h (FuelGauge)
 
-used GPIO Pin :
-ULT_PIN = 1,            //오류 핀
-EEP_PIN = 2,            //전류 제어 핀
-ONE_WIRE_BUS = 3,       // DS18B20 센서 핀
-BUTTON_BOOT = 5,        // 모드 변경 버튼
-BUTTON_UP = 6,          // 설정온도 상승 버튼
-BUTTON_DOWN = 7,        // 설정온도 하강 버튼
-SDA_I2C = 8,            // Hardware에서 설정된 I2C핀
-SCL_I2C = 9,            // Hardware에서 설정된 I2C핀
-COOLER_PIN = 20,        // 냉각 제어 핀
-HEATER_PIN = 21         // 가열 제어 핀
+GPIO_PIN
+COOLER_PWM_PIN = 1, // PWM
+HEATER_PWM_PIN = 2, // PWM
+ONE_WIRE_BUS = 3,   // DS18B20 센서 핀
+BUTTON_BOOT = 5,    // 모드 변경 버튼
+BUTTON_UP = 6,      // 설정온도 상승 버튼
+BUTTON_DOWN = 7,    // 설정온도 하강 버튼
+SDA_I2C = 8,        // Hardware에서 설정된 I2C핀
+SCL_I2C = 9,        // Hardware에서 설정된 I2C핀
+COOLING_PAN = 10,
+COOLER_PIN = 20,    // 냉각 제어 핀
+HEATER_PIN = 21     // 가열 제어 핀
 
 구현 기능 : 
 코드 흐름도 : [코드 흐름도.pdf](https://github.com/user-attachments/files/20577649/default.pdf)
 
 Device Mode :
 0. Boot Mode :
-MPU에 최초 전력 공급 시 자동으로 진입되는 모드
+최초 전력 공급 시 자동으로 진입되는 모드
 약 3초 후 자동으로 Stanby Mode로 진입
 
 1. Stanby Mode :
