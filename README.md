@@ -1,4 +1,4 @@
-![image](https://github.com/user-attachments/assets/1a9f0129-d783-4565-b22c-057c5d733ac6)Code Editor 형식으로 변환해서 보시는 걸 추천합니다.
+Code Editor 형식으로 변환해서 보시는 걸 추천합니다.
 
 한경대학교 2025 졸업작품 SoftWare
 주제 : 온도 조절 텀블러
