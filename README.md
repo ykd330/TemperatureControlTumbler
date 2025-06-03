@@ -4,6 +4,21 @@
 제작 팀 : 온도 조절 텀블러 조 (5조) Hardware배치 및 PCB설계 담당 : 유경도 
 담당교수 : 김수찬교수님
 
+HardWare spec :
+Target-Board : ESP32-C3 SuperMini
+Module :
+1 x Display : OLED 12864 I2C
+1 x Temp Sensors : DS18B20
+3 x 3Pin Button (Output / VCC / GND)
+1 x Battery Manigement : MAX17043 (1S) (고장으로 사용 불가) 
+1 x StepDown Converter : LM2596
+1 x Feltier : TEC1-12704
+1 x Motor Drive : BTS7960
+1 x AC-DC Adaptor (12V 5A)
+1 x DC barrel jack (5.5 x 2.1)
+1 x Battery : li-po 3000mAh
+하드웨어 구성도 : [하드웨어 구성도.pdf](https://github.com/user-attachments/files/20577654/default.pdf)
+
 졸업작품에 사용할 PCB데이터 입니다.
 이름 "졸작"이 ESP32-C3 Supermini가 들어갈 메인 PCB입니다. 
 각 모듈 (Display, ButtonPCB, H-bridge 드라이버 등)과 연결되는 부분을 패드로 만들거나 헤더 핀 형식으로 만들어 두었습니다.
