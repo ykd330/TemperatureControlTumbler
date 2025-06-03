@@ -6,16 +6,19 @@ SoftWare설계 및 제작 담당 : 유경도
 담당교수 : 김수찬교수님
 
 HardWare spec :
-used Target-Board : ESP32-C3 SuperMini
+Target-Board : ESP32-C3 SuperMini
 Module :
 1 x Display : OLED 12864 I2C
 1 x Temp Sensors : DS18B20
 3 x 3Pin Button (Output / VCC / GND)
-1 x Battery Manigement : MAX17043 (1S)
-1 x Boost Converter : LTC1871 (Boost 5V)
-1 x Feltier : TEC1-4903
-1 x Motor Drive : DRV8833 (2Channel 1.5A 5V)
-하드웨어 구성도 : [HardWare System.pdf](https://github.com/user-attachments/files/20407849/HardWare.System.pdf)
+1 x Battery Manigement : MAX17043 (1S) (고장으로 사용 불가) 
+1 x StepDown Converter : LM2596
+1 x Feltier : TEC1-12704
+1 x Motor Drive : BTS7960
+1 x AC-DC Adaptor (12V 5A)
+1 x DC barrel jack (5.5 x 2.1)
+1 x Battery : li-po 3000mAh
+하드웨어 구성도 : [하드웨어 구성도.pdf](https://github.com/user-attachments/files/20577654/default.pdf)
 
 Development Environment :
 Dev tool : VSCode (Platform IO) + Arduino IDE(Test 및 Serial통신) <- VSCode에서 CDC boot 옵션 설정이 제공되지 않아 임의의 Serial통신이 불가능
@@ -43,7 +46,7 @@ COOLER_PIN = 20,        // 냉각 제어 핀
 HEATER_PIN = 21         // 가열 제어 핀
 
 구현 기능 : 
-코드 흐름도 : [코드 흐름도.pdf](https://github.com/user-attachments/files/20408020/default.pdf)
+코드 흐름도 : [코드 흐름도.pdf](https://github.com/user-attachments/files/20577649/default.pdf)
 
 Device Mode :
 0. Boot Mode :
@@ -80,10 +83,8 @@ Button : Up / Down 버튼으로 설정온도를 조절, Boot Button으로 온도
 boot버튼을 5초 이상 누르면 강제로 재부팅함
 
 H-Bridge Control :
-1. 3A의 전류를 제어하기 위해 2Channel로 구성 (OUT1, 3 / OUT2, 4)
-2. 2개의 GPIO핀을 각각 (In 1, 3 / In 2, 4)에 연결
-3. 하나의 GPIO pin은 방향 제어, 나머지 하나는 PWM으로 설정하여 전류를 제어
-4. PWM값은 SoftWare에서 현재온도와 설정온도를 비교하여 결정함 *Code 참조
-5. H-bridge의 오류 핀의 상태를 읽고 과열 / 과전류 등 문제 발생 시 작동 일시 정지
-6. EEP 단자를 통해 작동을 사용자가 임의로 제어
+1. Logic 핀 2개와 PWM핀 2개로 제어
+2. 드라이버 특성상 두개의 logic 핀은 작동시 high로 설정
+3. PWM핀을 통해 전류의 흐름 및 전류량을 제어함
+4. 단 두 PWM핀에 동시에 PWM이 인가될 경우 드라이버 과열로 손상 가능성 있으므로 소프트웨어적으로 delay를 추가함
 
