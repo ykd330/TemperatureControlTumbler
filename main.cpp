@@ -13,18 +13,19 @@
 /*-----GPIO 설정부-----*/
 enum GPIO_PIN
 {
-
-  COOLER_PWM_PIN = 1, // PWM
-  HEATER_PWM_PIN = 2, // PWM
-  ONE_WIRE_BUS = 3,   // DS18B20 센서 핀
-  BUTTON_BOOT = 5,    // 모드 변경 버튼
-  BUTTON_UP = 6,      // 설정온도 상승 버튼
-  BUTTON_DOWN = 7,    // 설정온도 하강 버튼
+  ACTIVE_PIN = 0, // 활성화 핀
+  BUTTON_DOWN = 1,    // 설정온도 하강 버튼
+  BUTTON_UP = 2,      // 설정온도 상승 버튼
+  BUTTON_BOOT = 3,    // 모드 변경 버튼
+  ONE_WIRE_BUS = 4,   // DS18B20 센서 핀
+  COOLER_PWM_PIN = 5, // PWM
+  HEATER_PWM_PIN = 6, // PWM
+  COOLING_PAN = 7, // 냉각팬 제어 핀
   SDA_I2C = 8,        // Hardware에서 설정된 I2C핀
   SCL_I2C = 9,        // Hardware에서 설정된 I2C핀
-  COOLING_PAN = 10,
-  COOLER_PIN = 20,    // 냉각 제어 핀
-  HEATER_PIN = 21     // 가열 제어 핀
+  MAIN_FELTIER_PIN = 10, // 메인 펠티어 제어 핀
+  SUB_FELTIER_PIN1 = 20,    // 냉각 제어 핀
+  SUB_FELTIER_PIN2 = 21     // 가열 제어 핀
 };
 
 /*-----Module Setting-----*/
@@ -337,21 +338,51 @@ void IRAM_ATTR bootButtonF() // Boot Button Interrupt Service Routine
 
 /*------------------------사용자 함수 정의 부분------------------------*/
 
+unsigned long currentTime = 0; // 현재 시간 변수
+unsigned char checkToChangeFeltierMode = 0; // 펠티어 모드 변경 확인용 변수
 /*------시스템 내부 feltier 제어 결정 함수------*/
 void changeFeltierMode(ControlMode control_device_mode) // 열전소자 제어 함수
 {
   if (control_device_mode == HEATER_MODE)
   {
-    digitalWrite(HEATER_PIN, HIGH);            // 가열 제어 핀 HIGH
-    digitalWrite(COOLER_PIN, HIGH);             // 냉각 제어 핀 LOW
+    digitalWrite(ACTIVE_PIN, HIGH);            //작동 시작
     digitalWrite(COOLING_PAN, HIGH);
     ledcWrite(PWM_COOLING_CHANNEL, 0);
     ledcWrite(PWM_HEATING_CHANNEL, dutyCycle); // 가열 PWM
+    if (currentTime = 0) 
+      currentTime = millis(); // 현재 시간 초기화
+    if(millis() - currentTime >= 300000) //5분마다 펠티어소자 변경경
+      checkToChangeFeltierMode++; // 5분마다 펠티어 모드 변경 확인용 변수 증가
+    if(checkToChangeFeltierMode > 2) 
+      checkToChangeFeltierMode = 0; // 2번 이상 변경되면 초기화
+
+    switch (checkToChangeFeltierMode)
+    {
+    case 0:
+      digitalWrite(SUB_FELTIER_PIN1, LOW);  // 서브 펠티어 작동 중지
+      digitalWrite(SUB_FELTIER_PIN2, LOW);  // 서브 펠티어 작동 중지
+      delay(50); // 서브 펠티어 작동 중지 후 딜레이
+      digitalWrite(MAIN_FELTIER_PIN, HIGH); // 메인 펠티어 작동
+      break;
+    
+    case 1:
+      digitalWrite(MAIN_FELTIER_PIN, LOW);  // 메인 펠티어 작동 중지
+      digitalWrite(SUB_FELTIER_PIN2, LOW);  // 서브 펠티어2 작동 중지
+      delay(50); // 서브 펠티어2 작동 중지 후 딜레이
+      digitalWrite(SUB_FELTIER_PIN1, HIGH); // 서브 펠티어1 작동
+      break;
+
+    case 2:
+      digitalWrite(MAIN_FELTIER_PIN, LOW);  // 메인 펠티어 작동 중지
+      digitalWrite(SUB_FELTIER_PIN1, LOW);  // 서브 펠티어1 작동 중지
+      delay(50); // 서브 펠티어1 작동 중지 후 딜레이
+      digitalWrite(SUB_FELTIER_PIN2, HIGH); // 서브 펠티어2 작동
+      break;
+    }
   }
   else if (control_device_mode == COOLER_MODE)
   {
-    digitalWrite(HEATER_PIN, HIGH);             // 가열 제어 핀 LOW
-    digitalWrite(COOLER_PIN, HIGH);            // 냉각 제어 핀 HIGH
+    digitalWrite(ACTIVE_PIN, HIGH);             //작동시작 
     digitalWrite(COOLING_PAN, HIGH);
     ledcWrite(PWM_HEATING_CHANNEL, 0);
     if(temperatureC < 25)
@@ -361,8 +392,7 @@ void changeFeltierMode(ControlMode control_device_mode) // 열전소자 제어 �
   }
   else if (control_device_mode == STOP_MODE)
   {
-    digitalWrite(HEATER_PIN, LOW); // 가열 제어 핀 LOW
-    digitalWrite(COOLER_PIN, LOW); // 냉각 제어 핀 LOW
+    digitalWrite(ACTIVE_PIN, LOW); // 작동중지 
     digitalWrite(COOLING_PAN, LOW);
     ledcWrite(PWM_HEATING_CHANNEL, 0);
     ledcWrite(PWM_COOLING_CHANNEL, 0);
@@ -712,12 +742,19 @@ void setup()
   pinMode(BUTTON_DOWN, INPUT_PULLDOWN);
   pinMode(BUTTON_BOOT, INPUT_PULLDOWN);
   
-
   /*------pinMode OUTPUT------*/
-  pinMode(HEATER_PIN, OUTPUT);
-  pinMode(COOLER_PIN, OUTPUT);
+  pinMode(ACTIVE_PIN, OUTPUT);
   pinMode(COOLING_PAN, OUTPUT);
+  pinMode(MAIN_FELTIER_PIN, OUTPUT);
+  pinMode(SUB_FELTIER_PIN1, OUTPUT);
+  pinMode(SUB_FELTIER_PIN2, OUTPUT);
 
+  /*------digitalWrite OUTPUT------*/
+  digitalWrite(MAIN_FELTIER_PIN, LOW); // 펠티어소자 초기화
+  digitalWrite(SUB_FELTIER_PIN1, LOW); // 펠티어소자 초기화
+  digitalWrite(SUB_FELTIER_PIN2, LOW); // 펠티어소자 초기화
+  digitalWrite(ACTIVE_PIN, LOW);       // 작동 중지
+  digitalWrite(COOLING_PAN, LOW);     // 쿨링팬 초기화
 
   /*------DS18B20설정부------*/
   sensors.begin();                     // DS18B20 센서 초기화
