@@ -1,10 +1,10 @@
 Code Editor 형식으로 변환해서 보시는 걸 추천합니다.
 
-한경대학교 2025 졸업작품 SoftWare
+한경대학교 2025 졸업작품 firmWare
 주제 : 온도 조절 텀블러
 제작기간 : 2025.03.04 ~ 2025.05.28
 제작 팀 : 온도 조절 텀블러 조 (5조)
-SoftWare설계 및 제작 담당 : 유경도
+firmWare설계 및 제작 담당 : 유경도
 담당교수 : 김수찬교수님
 
 Development Environment :
